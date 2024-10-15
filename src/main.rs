@@ -43,6 +43,9 @@ struct KNNResultSet {
 }
 
 impl KNNResultSet {
+
+    // Since size is fixed, we can just offload all the allocation work in the initialization
+    // Remove overhead of calling Vec::push()
     fn new_with_capacity(capacity: usize) -> Self {
         unsafe {
             // Fastest way to allocate without default value that i know of
@@ -100,6 +103,52 @@ impl KNNResultSet {
     }
 }
 
+struct RadiusResultSet {
+    radius: f64,
+    indices_dists: Vec<(usize, f64)>, // (Index, Distance)
+}
+
+impl RadiusResultSet {
+    pub fn new_with_radius(radius: f64) -> Self {
+        Self {
+            radius,
+            indices_dists: vec![]
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.indices_dists.clear();
+    }
+
+    pub fn add_point(&mut self, dist: f64, index: usize) {
+        if dist < self.radius { self.indices_dists.push((index, dist)) };
+    }
+
+    pub fn set_radius_and_clear(&mut self, radius: f64) {
+        self.radius = radius;
+        self.clear();
+    }
+
+    pub fn worst_item(&self) -> (usize, f64) {
+        assert!(self.indices_dists.len() > 0);
+        self.indices_dists.iter()
+            .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
+            .copied().unwrap() // To return an owned (usize, f64) instead of a reference
+    }
+}
+
+
+// Equivalent to IndexDist_Sorter in C++ nanoflann. If same dist, return the earliest index
+fn sort_by_index_distance<T: Ord, U: PartialOrd>(vec: &mut Vec<(T, U)>) {
+    vec.sort_by(|a, b| {
+        match a.1.partial_cmp(&b.1) {
+            Some(std::cmp::Ordering::Equal) => a.0.cmp(&b.0),
+            Some(ordering) => ordering,
+            None => std::cmp::Ordering::Greater, // Treat NaN as larger
+        }
+    });
+}
+
 fn main() {
     let mut result = KNNResultSet::new_with_capacity(10);
     println!("{:?}", result.indices);
@@ -111,7 +160,7 @@ fn main() {
 }
 
 #[cfg(test)]
-mod tests {
+mod knnresult_set_tests {
     use approx::relative_eq;
     use super::*;
 
@@ -142,15 +191,97 @@ mod tests {
     fn test_worst_dist() {
         let mut sut = KNNResultSet::new_with_capacity(10);
         sut.add_point(1.0, 1);
-        sut.add_point(3.0, 2);
-        sut.add_point(2.0, 3);
-        sut.add_point(5.0, 4);
-        sut.add_point(4.0, 5);
-        sut.add_point(7.0, 6);
-        sut.add_point(6.0, 7);
+        sut.add_point(2.0, 2);
+        sut.add_point(3.0, 3);
+        sut.add_point(4.0, 4);
+        sut.add_point(5.0, 5);
+        sut.add_point(6.0, 6);
+        sut.add_point(7.0, 7);
         sut.add_point(8.0, 8);
         sut.add_point(9.0, 9);
         sut.add_point(10.0, 10);
         relative_eq!(sut.worst_dist(),  10.0);
+    }
+}
+
+#[cfg(test)]
+mod radius_result_set_tests {
+    use approx::relative_eq;
+    use super::*;
+
+    #[test]
+    fn test_results_new() {
+        let sut = RadiusResultSet::new_with_radius(10.0);
+        assert_eq!(sut.indices_dists, []);
+        relative_eq!(sut.radius, 10.0);
+    }
+
+    #[test]
+    fn test_add_point() {
+        let mut sut = RadiusResultSet::new_with_radius(5.0);
+        sut.add_point(1.0, 1);
+        sut.add_point(2.0, 2);
+        sut.add_point(3.0, 3);
+        sut.add_point(4.0, 4);
+        sut.add_point(5.0, 5);
+        sut.add_point(6.0, 6);
+        relative_eq!(sut.indices_dists[0].1, 1.0);
+        relative_eq!(sut.indices_dists[1].1, 2.0);
+        relative_eq!(sut.indices_dists[2].1, 3.0);
+        relative_eq!(sut.indices_dists[3].1, 4.0);
+        assert_eq!(sut.indices_dists.len(), 4);
+    }
+
+    #[test]
+    fn test_sort() {
+        let mut sut = RadiusResultSet::new_with_radius(5.0);
+        sut.add_point(2.0, 1);
+        sut.add_point(1.0, 2);
+        sut.add_point(2.0, 3);
+        sut.add_point(3.0, 4);
+        sort_by_index_distance::<usize, f64>(&mut sut.indices_dists);
+        assert_eq!(sut.indices_dists[0].0, 2);
+        assert_eq!(sut.indices_dists[1].0, 1);
+        assert_eq!(sut.indices_dists[2].0, 3);
+        assert_eq!(sut.indices_dists[3].0, 4);
+        relative_eq!(sut.indices_dists[0].1, 1.0);
+        relative_eq!(sut.indices_dists[1].1, 2.0);
+        relative_eq!(sut.indices_dists[2].1, 2.0);
+        relative_eq!(sut.indices_dists[3].1, 3.0);
+    }
+
+    #[test]
+    fn test_clear() {
+        let mut sut = RadiusResultSet::new_with_radius(5.0);
+        sut.add_point(1.0, 1);
+        sut.add_point(2.0, 2);
+        sut.add_point(3.0, 3);
+        sut.add_point(4.0, 4);
+        sut.clear();
+        assert_eq!(sut.indices_dists.len(), 0);
+    }
+
+    #[test]
+    fn test_radius_and_clear() {
+        let mut sut = RadiusResultSet::new_with_radius(5.0);
+        sut.add_point(1.0, 1);
+        sut.add_point(2.0, 2);
+        sut.add_point(3.0, 3);
+        sut.add_point(4.0, 4);
+        sut.set_radius_and_clear(10.0);
+        assert_eq!(sut.indices_dists.len(), 0);
+        relative_eq!(sut.radius, 10.0);
+    }
+
+    #[test]
+    fn test_worst_item() {
+        let mut sut = RadiusResultSet::new_with_radius(11.0);
+        sut.add_point(1.0, 1);
+        sut.add_point(10.0, 2);
+        sut.add_point(2.0, 3);
+        sut.add_point(5.0, 4);
+        sut.add_point(4.0, 5);
+        assert_eq!(sut.worst_item().0, 2);
+        relative_eq!(sut.worst_item().1, 10.0);
     }
 }
