@@ -149,6 +149,333 @@ fn sort_by_index_distance<T: Ord, U: PartialOrd>(vec: &mut Vec<(T, U)>) {
     });
 }
 
+struct SearchParams {
+    checks: usize,
+    eps: f64,
+    sorted: bool,
+}
+
+impl SearchParams {
+    pub fn new() -> Self {
+        Self {
+            checks: 32,
+            eps: 0.0,
+            sorted: true,
+        }
+    }
+}
+
+struct KDTree {
+    vind: Vec<usize>,
+    leaf_size: usize,
+}
+
+struct Point {
+    x: f64,
+    y: f64,
+    z: f64,
+}
+
+// Hard code a data source for the KDTree
+struct DataSource {
+    vec: Vec<Point>
+}
+
+impl DataSource {
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            vec: Vec::with_capacity(capacity)
+        }
+    }
+    pub fn add_point(&mut self, x: f64, y: f64, z: f64) {
+        self.vec.push(Point { x, y, z });
+    }
+    pub fn size(&self) -> usize {
+        self.vec.len()
+    }
+
+    pub fn get_point_count(&self) -> usize {
+        self.vec.len()
+    }
+
+    pub fn get_point(&self, index: usize, dim: usize) -> f64 {
+        match dim {
+            0 => self.vec[index].x,
+            1 => self.vec[index].y,
+            2 => self.vec[index].z,
+            _ => panic!("Invalid dimension")
+        }
+    }
+}
+
+struct KDTreeSingleIndexParams {
+    leaf_max_size: usize,
+}
+
+impl KDTreeSingleIndexParams {
+    pub fn new() -> Self {
+        Self {
+            leaf_max_size: 10
+        }
+    }
+}
+
+pub struct Node {
+    node_type: NodeType,         // Replaces the union
+    child1: Option<Box<Node>>,   // Replaces Node* child1
+    child2: Option<Box<Node>>,   // Replaces Node* child2
+}
+
+pub enum NodeType {
+    Leaf {
+        left: usize,
+        right: usize,
+    },
+    NonLeaf {
+        div_feat: i32,      // Dimension used for subdivision
+        div_low: f64,      // The low value for subdivision
+        div_high: f64,     // The high value for subdivision
+    },
+}
+
+struct Interval {
+    low: f64,
+    high: f64,
+}
+
+struct BoundingBox {
+    bounds: Vec<Interval>,
+}
+
+impl BoundingBox {
+    pub fn new(dim: usize) -> Self {
+        let mut bounds = Vec::with_capacity(dim);
+        for _ in 0..dim {
+            bounds.push(Interval { low: 0.0, high: 0.0 });
+        }
+        Self { bounds }
+    }
+}
+
+struct KDTreeSingleIndex {
+    // Indices to points in the dataset
+    vind: Vec<usize>,
+    leaf_size: usize,
+    dataset: DataSource,
+    // nanoflann use a pointer to the root node
+    root: Option<Box<Node>>,
+    size: usize,
+    size_at_index_build: usize,
+    dim: usize,
+    root_BBox: BoundingBox,
+}
+
+impl KDTreeSingleIndex {
+    pub fn new(dataset: DataSource, params: KDTreeSingleIndexParams) -> Self {
+        let dim = 3;
+        let size = dataset.size();
+        let mut vind = Vec::with_capacity(size);
+        for i in 0..size {
+            vind.push(i);
+        }
+        let root = None;
+        let size_at_index_build = size;
+        let mut tree = Self {
+            vind,
+            leaf_size: params.leaf_max_size,
+            dataset,
+            root,
+            size,
+            size_at_index_build,
+            dim,
+            root_BBox: BoundingBox::new(dim),
+        };
+        tree.init_vind();
+        tree
+    }
+
+    pub fn init_vind(&mut self) {
+        self.vind.clear();
+        // Can be optimized to use unsafe code
+        self.vind.resize(self.size, 0);
+        for i in 0..self.size {
+            self.vind.push(i);
+        }
+    }
+
+    pub fn compute_bounding_box(&self, bounding_box: BoundingBox) {
+        let N = self.size;
+        for i in 0..self.dim {
+            bounding_box.bounds[i].low = self.dataset.get_point(0, i);
+            bounding_box.bounds[i].high = self.dataset.get_point(0, i);
+        }
+        for k in 1..N {
+            for i in 0..self.dim {
+                let val = self.dataset.get_point(k, i);
+                if val < bounding_box.bounds[i].low {
+                    bounding_box.bounds[i].low = val;
+                }
+                if val > bounding_box.bounds[i].high {
+                    bounding_box.bounds[i].high = val;
+                }
+            }
+        }
+    }
+
+    // Return index of new root
+    pub fn divide_tree(&self, left: usize, right: usize, bounding_box: &BoundingBox) -> Node {
+        let mut node = Node {
+            node_type: NodeType::NonLeaf {
+                div_feat: 0,
+                div_low: 0.0,
+                div_high: 0.0,
+            },
+            child1: None,
+            child2: None,
+        };
+        if (right - left) <= self.leaf_size {
+            // Explicitly give the node a Leaf type
+            node.child1 = Some(Box::new(Node {
+                node_type: NodeType::Leaf { left, right },
+                child1: None,
+                child2: None,
+            }));
+            for i in 0..self.dim {
+                let val = self.dataset.get_point(self.vind[left], i);
+                bounding_box.bounds[i].low = val;
+                bounding_box.bounds[i].high = val;
+            }
+            for k in (left + 1)..right {
+                for i in 0..self.dim {
+                    let val = self.dataset.get_point(self.vind[k], i);
+                    if val < bounding_box.bounds[i].low {
+                        bounding_box.bounds[i].low = val;
+                    }
+                    if val > bounding_box.bounds[i].high {
+                        bounding_box.bounds[i].high = val;
+                    }
+                }
+            }
+        } else {
+            let index;
+            let cut_feat;
+            let cut_val;
+        }
+        node
+    }
+
+    fn middle_split(&self, ind: usize, count: usize, index: usize,
+                    cut_feat: &mut i32, cut_val: &mut f64, bounding_box: &BoundingBox) {
+        let eps = 1e-5;
+        let mut max_span = bounding_box.bounds[0].high - bounding_box.bounds[0].low;
+        for i in 1..self.dim {
+            let span = bounding_box.bounds[i].high - bounding_box.bounds[i].low;
+            if span > max_span {
+                max_span = span;
+            }
+        }
+        let mut max_spread = -1.0;
+        *cut_feat = 0;
+        for i in 0..self.dim {
+            let span = bounding_box.bounds[i].high - bounding_box.bounds[i].low;
+            if span > (1.0 - eps) * max_span {
+                let mut min_element: f64 = 0.0;
+                let mut max_element: f64 = 0.0;
+                self.compute_min_max(ind, count, i, &mut min_element, &mut max_element);
+                let spread = max_element - min_element;
+                if spread > max_spread {
+                    max_spread = spread;
+                    *cut_feat = i as i32;
+                }
+            }
+        }
+        let split_val = 0.5 * (bounding_box.bounds[*cut_feat as usize].low + bounding_box.bounds[*cut_feat as usize].high);
+        let mut min_elememt: f64 = 0.0;
+        let mut max_element: f64 = 0.0;
+        self.compute_min_max(ind, count, *cut_feat as usize, &mut min_elememt, &mut max_element);
+
+        if split_val < min_elememt {
+            *cut_val = min_elememt;
+        } else if split_val > max_element {
+            *cut_val = max_element;
+        } else {
+            *cut_val = split_val;
+        }
+
+        let lim1: usize;
+        let lim2: usize;
+    }
+
+    // Element is equivalent to dim
+    fn compute_min_max(&self, ind: usize, count: usize, cut_feat: usize, min_element: &mut f64, max_element: &mut f64) {
+        *min_element = self.dataset.get_point(self.vind[ind], cut_feat);
+        *max_element = self.dataset.get_point(self.vind[ind], cut_feat);
+        for i in 1..count {
+            let val = self.dataset.get_point(self.vind[ind + i], cut_feat);
+            if val < *min_element {
+                *min_element = val;
+            }
+            if val > *max_element {
+                *max_element = val;
+            }
+        }
+    }
+
+    /**
+    *  Subdivide the list of points by a plane perpendicular on axe corresponding
+    *  to the 'cutfeat' dimension at 'cutval' position.
+    *
+    *  On return:
+    *  dataset[ind[0..lim1-1]][cutfeat]<cutval
+    *  dataset[ind[lim1..lim2-1]][cutfeat]==cutval
+    *  dataset[ind[lim2..count]][cutfeat]>cutval
+    */
+    fn plane_split(&self, ind: usize, count: usize, cut_feat: usize, cut_val: &mut f64, lim1: &mut usize, lim2: &mut usize) {
+        let mut left = 0;
+        let mut right = count - 1;
+        // This is a variation of the Dutch National Flag problem
+        loop {
+            while left <= right && self.dataset.get_point(self.vind[ind + left], cut_feat) < *cut_val {
+                left += 1;
+            }
+            while left <= right && self.dataset.get_point(self.vind[ind + right], cut_feat) >= *cut_val {
+                right -= 1;
+            }
+            if left > right  {
+                break;
+            }
+            let temp = self.vind[ind + left];
+            self.vind[ind + left] = self.vind[ind + right];
+            self.vind[ind + right] = temp;
+            left += 1;
+            right -= 1;
+        }
+        // By this point, all points less than cut_val are on the left side of
+        *lim1 = left;
+        right = count - 1;
+        loop {
+            while left <= right && self.dataset.get_point(self.vind[ind + left], cut_feat) <= *cut_val {
+                left += 1;
+            }
+            while left <= right && self.dataset.get_point(self.vind[ind + right], cut_feat) > *cut_val {
+                right -= 1;
+            }
+            if left > right {
+                break;
+            }
+            let temp = self.vind[ind + left];
+            self.vind[ind + left] = self.vind[ind + right];
+            self.vind[ind + right] = temp;
+            left += 1;
+            right -= 1;
+        }
+    }
+
+    fn dataset_get(&self, index: usize, dim: usize) -> f64 {
+        self.dataset.get_point(index, dim)
+    }
+}
+
 fn main() {
     let mut result = KNNResultSet::new_with_capacity(10);
     println!("{:?}", result.indices);
