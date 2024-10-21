@@ -34,6 +34,16 @@
 //     }
 // }
 
+use std::cmp::PartialEq;
+use std::ops::Index;
+
+trait ResultSet {
+    fn size(&self) -> usize;
+    fn is_full(&self) -> bool;
+    fn add_point(&mut self, dist: f64, index: usize);
+    fn worst_dist(&self) -> f64;
+}
+
 // Version 1: used vectors
 struct KNNResultSet {
     indices: Vec<usize>,
@@ -67,7 +77,8 @@ impl KNNResultSet {
             }
         }
     }
-
+}
+impl ResultSet for KNNResultSet {
     fn size(&self) -> usize {
         self.count
     }
@@ -102,11 +113,11 @@ impl KNNResultSet {
         self.dists[self.capacity - 1]
     }
 }
-
 struct RadiusResultSet {
     radius: f64,
     indices_dists: Vec<(usize, f64)>, // (Index, Distance)
 }
+
 
 impl RadiusResultSet {
     pub fn new_with_radius(radius: f64) -> Self {
@@ -115,13 +126,8 @@ impl RadiusResultSet {
             indices_dists: vec![]
         }
     }
-
     pub fn clear(&mut self) {
         self.indices_dists.clear();
-    }
-
-    pub fn add_point(&mut self, dist: f64, index: usize) {
-        if dist < self.radius { self.indices_dists.push((index, dist)) };
     }
 
     pub fn set_radius_and_clear(&mut self, radius: f64) {
@@ -134,6 +140,24 @@ impl RadiusResultSet {
         self.indices_dists.iter()
             .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
             .copied().unwrap() // To return an owned (usize, f64) instead of a reference
+    }
+
+}
+impl ResultSet for RadiusResultSet {
+    fn size(&self) -> usize {
+        self.indices_dists.len()
+    }
+
+    fn is_full(&self) -> bool {
+        true
+    }
+
+    fn add_point(&mut self, dist: f64, index: usize) {
+        if dist < self.radius { self.indices_dists.push((index, dist)) };
+    }
+
+    fn worst_dist(&self) -> f64 {
+        self.radius
     }
 }
 
@@ -177,6 +201,18 @@ struct Point {
     z: f64,
 }
 
+impl Index<usize> for Point {
+    type Output = f64;
+    fn index(&self, index: usize) -> &Self::Output {
+        match index {
+            0 => &self.x,
+            1 => &self.y,
+            2 => &self.z,
+            _ => panic!("Invalid index")
+        }
+    }
+}
+
 // Hard code a data source for the KDTree
 #[derive(Clone, Debug)]
 struct DataSource {
@@ -208,6 +244,16 @@ impl DataSource {
             _ => panic!("Invalid dimension")
         }
     }
+
+    pub fn get_squared_distance(&self, point1: &Point, point2_idx: usize) -> f64 {
+        let mut dist = 0.0;
+        let point2 = &self.vec[point2_idx];
+        for i in 0..3 {
+            let diff = point1[i] - point2[i];
+            dist += diff * diff;
+        }
+        dist
+    }
 }
 
 struct KDTreeSingleIndexParams {
@@ -229,7 +275,7 @@ pub struct Node {
     child2: Option<Box<Node>>,   // Replaces Node* child2
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum NodeType {
     Leaf {
         left: usize,
@@ -275,6 +321,7 @@ struct KDTreeSingleIndex {
     dim: usize,
     root_bounding_box: BoundingBox,
 }
+
 
 impl KDTreeSingleIndex {
     pub fn new(dataset: DataSource, params: KDTreeSingleIndexParams) -> Self {
@@ -505,8 +552,79 @@ impl KDTreeSingleIndex {
         }
         *lim2 = left;
     }
-    
 
+    // Squared Euclidean
+    fn accum_dist(a: f64, b: f64) -> f64 {
+        let diff = a - b;
+        diff * diff
+    }
+
+    // Compute how far the point is from the bounding box
+    fn compute_initial_distance(&self, point: &Point, dists: &mut Vec<f64>) -> f64 {
+        let mut dist_square: f64 = 0.0;
+        for i in 0..self.dim {
+            if point[i] < self.root_bounding_box.bounds[i].low {
+                dists[i] = Self::accum_dist(point[i], self.root_bounding_box.bounds[i].low);
+                dist_square += dists[i];
+            }
+            if point[i] > self.root_bounding_box.bounds[i].high {
+                dists[i] = Self::accum_dist(point[i], self.root_bounding_box.bounds[i].high);
+                dist_square += dists[i];
+            }
+        }
+        dist_square
+    }
+
+    fn search_level(&self, result: &mut dyn ResultSet, point: &Point,
+                    node: &Node, mut min_dists_square: f64, dists: &mut Vec<f64>, eps_error: f64) -> bool {
+        if matches!(node.node_type, NodeType::Leaf { .. }) {
+            let worst_dist = result.worst_dist();
+            let NodeType::Leaf { left, right } = node.node_type else { return false; };
+            for i in left..right {
+                let index = self.vind[i];
+                let dist_square = self.dataset.get_squared_distance(point, index);
+                if dist_square < worst_dist {
+                    result.add_point(dist_square, index);
+                    if result.is_full() {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+
+        let NodeType::NonLeaf { div_feat, div_low, div_high } = node.node_type else { return false; };
+        let index = div_feat as usize;
+        let val = point[index];
+        let diff1 = val - div_low;
+        let diff2 = val - div_high;
+
+        let bestChild;
+        let otherChild;
+        let cut_dists;
+        if diff1 + diff2 < 0.0 {
+            bestChild = &node.child1;
+            otherChild = &node.child2;
+            cut_dists = Self::accum_dist(val, div_high);
+        } else {
+            bestChild = &node.child2;
+            otherChild = &node.child1;
+            cut_dists = Self::accum_dist(val, div_low);
+        }
+        if !self.search_level(result, point, bestChild.as_ref().unwrap(), min_dists_square, dists, eps_error) {
+            return false;
+        }
+        let dist = dists[index];
+        min_dists_square += cut_dists - dist;
+        dists[index] = cut_dists;
+        if min_dists_square * eps_error < result.worst_dist() {
+            return self.search_level(result, point, otherChild.as_ref().unwrap(), min_dists_square, dists, eps_error);
+        } else {
+            return false;
+        }
+        dists[index] = dist;
+        true
+    }
     fn dataset_get(&self, index: usize, dim: usize) -> f64 {
         self.dataset.get_point(index, dim)
     }
@@ -651,7 +769,7 @@ mod radius_result_set_tests {
 
 #[cfg(test)]
 mod kd_tree_test {
-    use approx::{assert_relative_eq, relative_eq};
+    use approx::{assert_relative_eq};
     use super::*;
 
     #[test]
