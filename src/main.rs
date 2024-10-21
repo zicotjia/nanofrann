@@ -170,6 +170,7 @@ struct KDTree {
     leaf_size: usize,
 }
 
+#[derive(Clone, Debug)]
 struct Point {
     x: f64,
     y: f64,
@@ -177,6 +178,7 @@ struct Point {
 }
 
 // Hard code a data source for the KDTree
+#[derive(Clone, Debug)]
 struct DataSource {
     vec: Vec<Point>
 }
@@ -220,12 +222,14 @@ impl KDTreeSingleIndexParams {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct Node {
     node_type: NodeType,         // Replaces the union
     child1: Option<Box<Node>>,   // Replaces Node* child1
     child2: Option<Box<Node>>,   // Replaces Node* child2
 }
 
+#[derive(Clone, Debug)]
 pub enum NodeType {
     Leaf {
         left: usize,
@@ -238,11 +242,13 @@ pub enum NodeType {
     },
 }
 
+#[derive(Clone, Debug, PartialEq)]
 struct Interval {
     low: f64,
     high: f64,
 }
 
+#[derive(Clone, Debug)]
 struct BoundingBox {
     bounds: Vec<Interval>,
 }
@@ -257,17 +263,17 @@ impl BoundingBox {
     }
 }
 
+#[derive(Debug)]
 struct KDTreeSingleIndex {
     // Indices to points in the dataset
     vind: Vec<usize>,
     leaf_size: usize,
     dataset: DataSource,
-    // nanoflann use a pointer to the root node
     root: Option<Box<Node>>,
     size: usize,
     size_at_index_build: usize,
     dim: usize,
-    root_BBox: BoundingBox,
+    root_bounding_box: BoundingBox,
 }
 
 impl KDTreeSingleIndex {
@@ -288,58 +294,56 @@ impl KDTreeSingleIndex {
             size,
             size_at_index_build,
             dim,
-            root_BBox: BoundingBox::new(dim),
+            root_bounding_box: BoundingBox::new(dim),
         };
         tree.init_vind();
         tree
     }
 
-    pub fn init_vind(&mut self) {
+    pub fn build_index(&mut self) {
+        self.compute_bounding_box();
+        let mut bounding_box = self.root_bounding_box.clone();
+        self.root = Some(Box::new(self.divide_tree(0, self.size, &mut bounding_box)));
+    }
+
+    fn init_vind(&mut self) {
         self.vind.clear();
         // Can be optimized to use unsafe code
         self.vind.resize(self.size, 0);
         for i in 0..self.size {
-            self.vind.push(i);
+            self.vind[i] = i;
         }
     }
 
-    pub fn compute_bounding_box(&self, bounding_box: BoundingBox) {
-        let N = self.size;
+    pub fn compute_bounding_box(&mut self) {
+        let size = self.size;
         for i in 0..self.dim {
-            bounding_box.bounds[i].low = self.dataset.get_point(0, i);
-            bounding_box.bounds[i].high = self.dataset.get_point(0, i);
+            self.root_bounding_box.bounds[i].low = self.dataset.get_point(0, i);
+            self.root_bounding_box.bounds[i].high = self.dataset.get_point(0, i);
         }
-        for k in 1..N {
+        for k in 1..size {
             for i in 0..self.dim {
                 let val = self.dataset.get_point(k, i);
-                if val < bounding_box.bounds[i].low {
-                    bounding_box.bounds[i].low = val;
+                if val < self.root_bounding_box.bounds[i].low {
+                    self.root_bounding_box.bounds[i].low = val;
                 }
-                if val > bounding_box.bounds[i].high {
-                    bounding_box.bounds[i].high = val;
+                if val > self.root_bounding_box.bounds[i].high {
+                    self.root_bounding_box.bounds[i].high = val;
                 }
             }
         }
     }
 
     // Return index of new root
-    pub fn divide_tree(&self, left: usize, right: usize, bounding_box: &BoundingBox) -> Node {
-        let mut node = Node {
-            node_type: NodeType::NonLeaf {
-                div_feat: 0,
-                div_low: 0.0,
-                div_high: 0.0,
-            },
-            child1: None,
-            child2: None,
-        };
+    pub fn divide_tree(&mut self, left: usize, right: usize, bounding_box: &mut BoundingBox) -> Node {
+        let node;
         if (right - left) <= self.leaf_size {
             // Explicitly give the node a Leaf type
-            node.child1 = Some(Box::new(Node {
+            node = Node {
                 node_type: NodeType::Leaf { left, right },
                 child1: None,
                 child2: None,
-            }));
+            };
             for i in 0..self.dim {
                 let val = self.dataset.get_point(self.vind[left], i);
                 bounding_box.bounds[i].low = val;
@@ -357,15 +361,37 @@ impl KDTreeSingleIndex {
                 }
             }
         } else {
-            let index;
-            let cut_feat;
-            let cut_val;
+            let mut mid = 0;
+            let mut cut_feat: usize = 0;
+            let mut cut_val = 0.0;
+            self.middle_split(self.vind[0] + left, right - left, &mut mid, &mut cut_feat, &mut cut_val, bounding_box);
+
+            let mut left_bounding_box = bounding_box.clone();
+            left_bounding_box.bounds[cut_feat].high = cut_val;
+            let child1 = Some(Box::new(self.divide_tree(left, left + mid, &mut left_bounding_box)));
+
+            let mut right_bounding_box = bounding_box.clone();
+            right_bounding_box.bounds[cut_feat].low = cut_val;
+            let child2 = Some(Box::new(self.divide_tree(left + mid, right, &mut right_bounding_box)));
+
+            for i in 0..self.dim {
+                bounding_box.bounds[i].low = left_bounding_box.bounds[i].low.min(right_bounding_box.bounds[i].low);
+                bounding_box.bounds[i].high = left_bounding_box.bounds[i].high.max(right_bounding_box.bounds[i].high);
+            }
+            node = Node {
+                node_type: NodeType::NonLeaf {
+                    div_feat: cut_feat as i32,
+                    div_low: left_bounding_box.bounds[cut_feat].high,
+                    div_high: right_bounding_box.bounds[cut_feat].low },
+                child1,
+                child2,
+            };
         }
         node
     }
 
-    fn middle_split(&self, ind: usize, count: usize, index: usize,
-                    cut_feat: &mut i32, cut_val: &mut f64, bounding_box: &BoundingBox) {
+    fn middle_split(&mut self, ind: usize, count: usize, index: &mut usize,
+                    cut_feat: &mut usize, cut_val: &mut f64, bounding_box: &BoundingBox) {
         let eps = 1e-5;
         let mut max_span = bounding_box.bounds[0].high - bounding_box.bounds[0].low;
         for i in 1..self.dim {
@@ -376,40 +402,48 @@ impl KDTreeSingleIndex {
         }
         let mut max_spread = -1.0;
         *cut_feat = 0;
+        let mut min_element = 0.0;
+        let mut max_element = 0.0;
         for i in 0..self.dim {
             let span = bounding_box.bounds[i].high - bounding_box.bounds[i].low;
             if span > (1.0 - eps) * max_span {
-                let mut min_element: f64 = 0.0;
-                let mut max_element: f64 = 0.0;
-                self.compute_min_max(ind, count, i, &mut min_element, &mut max_element);
-                let spread = max_element - min_element;
+                let mut min_element_: f64 = 0.0;
+                let mut max_element_: f64 = 0.0;
+                self.compute_min_max(ind, count, i, &mut min_element_, &mut max_element_);
+                let spread = max_element_ - min_element_;
                 if spread > max_spread {
                     max_spread = spread;
-                    *cut_feat = i as i32;
+                    *cut_feat = i;
+                    min_element = min_element_;
+                    max_element = max_element_;
                 }
             }
         }
-        let split_val = 0.5 * (bounding_box.bounds[*cut_feat as usize].low + bounding_box.bounds[*cut_feat as usize].high);
-        let mut min_elememt: f64 = 0.0;
-        let mut max_element: f64 = 0.0;
-        self.compute_min_max(ind, count, *cut_feat as usize, &mut min_elememt, &mut max_element);
+        let split_val = 0.5 * (bounding_box.bounds[*cut_feat].low + bounding_box.bounds[*cut_feat].high);
 
-        if split_val < min_elememt {
-            *cut_val = min_elememt;
+        if split_val < min_element {
+            *cut_val = min_element;
         } else if split_val > max_element {
             *cut_val = max_element;
         } else {
             *cut_val = split_val;
         }
 
-        let lim1: usize;
-        let lim2: usize;
+        // lim1 is index of last points that are less than cut_val
+        // lim2 is index of last points that are equal to cut_val
+        let mut lim1: usize = 0;
+        let mut lim2: usize = 0;
+        self.plane_split(ind, count, *cut_feat, cut_val, &mut lim1, &mut lim2);
+        // Balancing purpose
+        if lim1 > count / 2 { *index = lim1; }
+        else if lim2 < count / 2 { *index = lim2; }
+        else { *index = count / 2; }
     }
 
     // Element is equivalent to dim
     fn compute_min_max(&self, ind: usize, count: usize, cut_feat: usize, min_element: &mut f64, max_element: &mut f64) {
         *min_element = self.dataset.get_point(self.vind[ind], cut_feat);
-        *max_element = self.dataset.get_point(self.vind[ind], cut_feat);
+        *max_element = *min_element;
         for i in 1..count {
             let val = self.dataset.get_point(self.vind[ind + i], cut_feat);
             if val < *min_element {
@@ -430,7 +464,7 @@ impl KDTreeSingleIndex {
     *  dataset[ind[lim1..lim2-1]][cutfeat]==cutval
     *  dataset[ind[lim2..count]][cutfeat]>cutval
     */
-    fn plane_split(&self, ind: usize, count: usize, cut_feat: usize, cut_val: &mut f64, lim1: &mut usize, lim2: &mut usize) {
+    fn plane_split(&mut self, ind: usize, count: usize, cut_feat: usize, cut_val: &mut f64, lim1: &mut usize, lim2: &mut usize) {
         let mut left = 0;
         let mut right = count - 1;
         // This is a variation of the Dutch National Flag problem
@@ -438,10 +472,10 @@ impl KDTreeSingleIndex {
             while left <= right && self.dataset.get_point(self.vind[ind + left], cut_feat) < *cut_val {
                 left += 1;
             }
-            while left <= right && self.dataset.get_point(self.vind[ind + right], cut_feat) >= *cut_val {
+            while right != 0 && left <= right && self.dataset.get_point(self.vind[ind + right], cut_feat) >= *cut_val {
                 right -= 1;
             }
-            if left > right  {
+            if left > right || right == 0 {
                 break;
             }
             let temp = self.vind[ind + left];
@@ -457,10 +491,10 @@ impl KDTreeSingleIndex {
             while left <= right && self.dataset.get_point(self.vind[ind + left], cut_feat) <= *cut_val {
                 left += 1;
             }
-            while left <= right && self.dataset.get_point(self.vind[ind + right], cut_feat) > *cut_val {
+            while right != 0 && left <= right && self.dataset.get_point(self.vind[ind + right], cut_feat) > *cut_val {
                 right -= 1;
             }
-            if left > right {
+            if left > right || right == 0 {
                 break;
             }
             let temp = self.vind[ind + left];
@@ -469,7 +503,9 @@ impl KDTreeSingleIndex {
             left += 1;
             right -= 1;
         }
+        *lim2 = left;
     }
+    
 
     fn dataset_get(&self, index: usize, dim: usize) -> f64 {
         self.dataset.get_point(index, dim)
@@ -610,5 +646,63 @@ mod radius_result_set_tests {
         sut.add_point(4.0, 5);
         assert_eq!(sut.worst_item().0, 2);
         relative_eq!(sut.worst_item().1, 10.0);
+    }
+}
+
+#[cfg(test)]
+mod kd_tree_test {
+    use approx::{assert_relative_eq, relative_eq};
+    use super::*;
+
+    #[test]
+    fn test_build_index() {
+        let mut dataset = DataSource::with_capacity(10);
+        dataset.add_point(1.0, 2.0, 3.0);
+        dataset.add_point(4.0, 5.0, 6.0);
+        dataset.add_point(7.0, 8.0, 9.0);
+        dataset.add_point(2.0, 3.0, 4.0);
+        dataset.add_point(5.0, 6.0, 7.0);
+        let mut params = KDTreeSingleIndexParams::new();
+        params.leaf_max_size = 2;
+        // Initialize KDTreeSingleIndex
+        let mut kdtree = KDTreeSingleIndex::new(dataset, params);
+
+        // Build the KD-tree index
+        kdtree.build_index();
+
+        // Check that the root node exists
+        assert!(kdtree.root.is_some(), "Root node should be initialized");
+
+        // Check that the KD-tree structure is built correctly
+        if let Some(root) = &kdtree.root {
+            // Check if the root is a non-leaf node (since the dataset is larger than leaf size)
+            match &root.node_type {
+                NodeType::NonLeaf { div_feat, div_low, div_high } => {
+                    // Verify the division feature and division values
+                    assert!(*div_feat >= 0 && *div_feat < 3, "Division feature should be within valid range");
+                    assert!(div_low < div_high, "Division low should be less than division high");
+                }
+                NodeType::Leaf { .. } => panic!("Root should not be a leaf node"),
+            }
+
+            // Check that the children nodes are initialized correctly
+            assert!(root.child1.is_some(), "Child 1 should be initialized");
+            assert!(root.child2.is_some(), "Child 2 should be initialized");
+        }
+
+        // Verify bounding box has been computed correctly
+        let expected_bounding_box = BoundingBox {
+            bounds: vec![
+                Interval { low: 1.0, high: 7.0 }, // For x-dimension
+                Interval { low: 2.0, high: 8.0 }, // For y-dimension
+                Interval { low: 3.0, high: 9.0 }, // For z-dimension
+            ],
+        };
+        for i in 0..3 {
+            assert_relative_eq!(kdtree.root_bounding_box.bounds[i].low, expected_bounding_box.bounds[i].low);
+            assert_relative_eq!(kdtree.root_bounding_box.bounds[i].high, expected_bounding_box.bounds[i].high);
+        }
+
+        println!("{:?}", kdtree);
     }
 }
