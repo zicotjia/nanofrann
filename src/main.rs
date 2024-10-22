@@ -59,6 +59,7 @@ impl KNNResultSet {
 
     // Since size is fixed, we can just offload all the allocation work in the initialization
     // Remove overhead of calling Vec::push()
+    #[inline]
     fn new_with_capacity(capacity: usize) -> Self {
         unsafe {
             // Fastest way to allocate without default value that i know of
@@ -83,6 +84,7 @@ impl KNNResultSet {
     }
 }
 impl ResultSet for KNNResultSet {
+    #[inline]
     fn init(&mut self, indices: &mut Vec<usize>, dists: &mut Vec<f64>) {
         self.indices = indices.clone();
         self.dists = dists.clone();
@@ -90,14 +92,15 @@ impl ResultSet for KNNResultSet {
             self.dists[self.capacity - 1] = f64::MAX;
         }
     }
+    #[inline]
     fn size(&self) -> usize {
         self.count
     }
-
+    #[inline]
     fn is_full(&self) -> bool {
         self.count == self.capacity
     }
-
+    #[inline]
     fn add_point(&mut self, dist: f64, index: usize) -> bool {
         let mut i = self.count;
         while i > 0 {
@@ -120,7 +123,7 @@ impl ResultSet for KNNResultSet {
         }
         true
     }
-
+    #[inline]
     fn worst_dist(&self) -> f64 {
         self.dists[self.capacity - 1]
     }
@@ -132,21 +135,25 @@ struct RadiusResultSet {
 
 
 impl RadiusResultSet {
+    #[inline]
     pub fn new_with_radius(radius: f64) -> Self {
         Self {
             radius,
             indices_dists: vec![]
         }
     }
+    #[inline]
     pub fn clear(&mut self) {
         self.indices_dists.clear();
     }
 
+    #[inline]
     pub fn set_radius_and_clear(&mut self, radius: f64) {
         self.radius = radius;
         self.clear();
     }
 
+    #[inline]
     pub fn worst_item(&self) -> (usize, f64) {
         assert!(self.indices_dists.len() > 0);
         self.indices_dists.iter()
@@ -163,19 +170,23 @@ impl ResultSet for RadiusResultSet {
         //     self.dists[self.capacity - 1] = f64::MAX;
         // }
     }
+    #[inline]
     fn size(&self) -> usize {
         self.indices_dists.len()
     }
 
+    #[inline]
     fn is_full(&self) -> bool {
         true
     }
 
+    #[inline]
     fn add_point(&mut self, dist: f64, index: usize) -> bool{
         if dist < self.radius { self.indices_dists.push((index, dist)) };
         true
     }
 
+    #[inline]
     fn worst_dist(&self) -> f64 {
         self.radius
     }
@@ -183,15 +194,15 @@ impl ResultSet for RadiusResultSet {
 
 
 // Equivalent to IndexDist_Sorter in C++ nanoflann. If same dist, return the earliest index
-fn sort_by_index_distance<T: Ord, U: PartialOrd>(vec: &mut Vec<(T, U)>) {
-    vec.sort_by(|a, b| {
-        match a.1.partial_cmp(&b.1) {
-            Some(std::cmp::Ordering::Equal) => a.0.cmp(&b.0),
-            Some(ordering) => ordering,
-            None => std::cmp::Ordering::Greater, // Treat NaN as larger
-        }
-    });
-}
+// fn sort_by_index_distance<T: Ord, U: PartialOrd>(vec: &mut Vec<(T, U)>) {
+//     vec.sort_by(|a, b| {
+//         match a.1.partial_cmp(&b.1) {
+//             Some(std::cmp::Ordering::Equal) => a.0.cmp(&b.0),
+//             Some(ordering) => ordering,
+//             None => std::cmp::Ordering::Greater, // Treat NaN as larger
+//         }
+//     });
+// }
 
 struct SearchParams {
     checks: usize,
@@ -200,6 +211,7 @@ struct SearchParams {
 }
 
 impl SearchParams {
+    #[inline]
     pub fn new() -> Self {
         Self {
             checks: 32,
@@ -240,22 +252,29 @@ struct DataSource {
 }
 
 impl DataSource {
+    #[inline]
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             vec: Vec::with_capacity(capacity)
         }
     }
+
+    #[inline]
     pub fn add_point(&mut self, x: f64, y: f64, z: f64) {
         self.vec.push(Point { x, y, z });
     }
+
+    #[inline]
     pub fn size(&self) -> usize {
         self.vec.len()
     }
 
+    #[inline]
     pub fn get_point_count(&self) -> usize {
         self.vec.len()
     }
 
+    #[inline]
     pub fn get_point(&self, index: usize, dim: usize) -> f64 {
         match dim {
             0 => self.vec[index].x,
@@ -265,6 +284,7 @@ impl DataSource {
         }
     }
 
+    #[inline]
     pub fn get_squared_distance(&self, point1: &Point, point2_idx: usize) -> f64 {
         let mut dist = 0.0;
         let point2 = &self.vec[point2_idx];
@@ -281,6 +301,7 @@ struct KDTreeSingleIndexParams {
 }
 
 impl KDTreeSingleIndexParams {
+   #[inline]
     pub fn new() -> Self {
         Self {
             leaf_max_size: 10
@@ -320,6 +341,7 @@ struct BoundingBox {
 }
 
 impl BoundingBox {
+    #[inline]
     pub fn new(dim: usize) -> Self {
         let mut bounds = Vec::with_capacity(dim);
         for _ in 0..dim {
@@ -344,10 +366,17 @@ struct KDTreeSingleIndex {
 
 
 impl KDTreeSingleIndex {
+    #[inline(always)]
     pub fn new(dataset: DataSource, params: KDTreeSingleIndexParams) -> Self {
         let dim = 3;
         let size = dataset.size();
         let mut vind = Vec::with_capacity(size);
+        unsafe {
+            vind.set_len(size);
+            for i in 0..size {
+                vind[i] = i;
+            }
+        }
         for i in 0..size {
             vind.push(i);
         }
@@ -363,25 +392,18 @@ impl KDTreeSingleIndex {
             dim,
             root_bounding_box: BoundingBox::new(dim),
         };
-        tree.init_vind();
         tree
     }
 
+    #[inline(always)]
     pub fn build_index(&mut self) {
         self.compute_bounding_box();
         let mut bounding_box = self.root_bounding_box.clone();
         self.root = Some(Box::new(self.divide_tree(0, self.size, &mut bounding_box)));
     }
 
-    fn init_vind(&mut self) {
-        self.vind.clear();
-        // Can be optimized to use unsafe code
-        self.vind.resize(self.size, 0);
-        for i in 0..self.size {
-            self.vind[i] = i;
-        }
-    }
 
+    #[inline(always)]
     pub fn compute_bounding_box(&mut self) {
         let size = self.size;
         for i in 0..self.dim {
@@ -401,7 +423,7 @@ impl KDTreeSingleIndex {
         }
     }
 
-    // Return index of new root
+    #[inline]
     pub fn divide_tree(&mut self, left: usize, right: usize, bounding_box: &mut BoundingBox) -> Node {
         let node;
         if (right - left) <= self.leaf_size {
@@ -457,6 +479,7 @@ impl KDTreeSingleIndex {
         node
     }
 
+    #[inline]
     fn middle_split(&mut self, ind: usize, count: usize, index: &mut usize,
                     cut_feat: &mut usize, cut_val: &mut f64, bounding_box: &BoundingBox) {
         let eps = 1e-5;
@@ -507,7 +530,7 @@ impl KDTreeSingleIndex {
         else { *index = count / 2; }
     }
 
-    // Element is equivalent to dim
+    #[inline(always)]
     fn compute_min_max(&self, ind: usize, count: usize, cut_feat: usize, min_element: &mut f64, max_element: &mut f64) {
         *min_element = self.dataset.get_point(self.vind[ind], cut_feat);
         *max_element = *min_element;
@@ -687,6 +710,7 @@ fn main() {
     kdtree.knn_search(&point_to_test, 50, &mut result);
     let elapsed_time = start_time.elapsed();
     println!("Time taken: {:?}", elapsed_time);
+
 
 }
 
