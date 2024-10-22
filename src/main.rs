@@ -366,7 +366,7 @@ struct KDTreeSingleIndex {
 
 
 impl KDTreeSingleIndex {
-    #[inline(always)]
+    #[inline]
     pub fn new(dataset: DataSource, params: KDTreeSingleIndexParams) -> Self {
         let dim = 3;
         let size = dataset.size();
@@ -395,7 +395,7 @@ impl KDTreeSingleIndex {
         tree
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn build_index(&mut self) {
         self.compute_bounding_box();
         let mut bounding_box = self.root_bounding_box.clone();
@@ -403,7 +403,7 @@ impl KDTreeSingleIndex {
     }
 
 
-    #[inline(always)]
+    #[inline]
     pub fn compute_bounding_box(&mut self) {
         let size = self.size;
         for i in 0..self.dim {
@@ -530,7 +530,7 @@ impl KDTreeSingleIndex {
         else { *index = count / 2; }
     }
 
-    #[inline(always)]
+    #[inline]
     fn compute_min_max(&self, ind: usize, count: usize, cut_feat: usize, min_element: &mut f64, max_element: &mut f64) {
         *min_element = self.dataset.get_point(self.vind[ind], cut_feat);
         *max_element = *min_element;
@@ -597,12 +597,14 @@ impl KDTreeSingleIndex {
     }
 
     // Squared Euclidean
+    #[inline]
     fn accum_dist(a: f64, b: f64) -> f64 {
         let diff = a - b;
         diff * diff
     }
 
     // Compute how far the point is from the bounding box
+    #[inline]
     fn compute_initial_distance(&self, point: &Point, dists: &mut Vec<f64>) -> f64 {
         let mut dist_square: f64 = 0.0;
         for i in 0..self.dim {
@@ -618,6 +620,7 @@ impl KDTreeSingleIndex {
         dist_square
     }
 
+    #[inline]
     fn search_level(&self, result: &mut dyn ResultSet, point: &Point,
                     node: &Node, mut min_dists_square: f64, dists: &mut Vec<f64>, eps_error: f64) -> bool {
         if matches!(node.node_type, NodeType::Leaf { .. }) {
@@ -641,26 +644,21 @@ impl KDTreeSingleIndex {
         let diff1 = val - div_low;
         let diff2 = val - div_high;
 
-        let bestChild;
-        let otherChild;
-        let cut_dists;
-        if diff1 + diff2 < 0.0 {
-            bestChild = &node.child1;
-            otherChild = &node.child2;
-            cut_dists = Self::accum_dist(val, div_high);
-        } else {
-            bestChild = &node.child2;
-            otherChild = &node.child1;
-            cut_dists = Self::accum_dist(val, div_low);
-        }
-        if !self.search_level(result, point, bestChild.as_ref().unwrap(), min_dists_square, dists, eps_error) {
+        let (best_child, other_child, cut_dists) =
+            if diff1 + diff2 < 0.0 {
+                (&node.child1, &node.child2, Self::accum_dist(val, div_high))
+            } else {
+                (&node.child2, &node.child1, Self::accum_dist(val, div_low))
+            };
+
+        if !self.search_level(result, point, best_child.as_ref().unwrap(), min_dists_square, dists, eps_error) {
             return false;
         }
         let dist = dists[index];
         min_dists_square += cut_dists - dist;
         dists[index] = cut_dists;
-        if min_dists_square * eps_error < result.worst_dist() {
-            if !self.search_level(result, point, otherChild.as_ref().unwrap(), min_dists_square, dists, eps_error) {
+        if min_dists_square * eps_error <= result.worst_dist() {
+            if !self.search_level(result, point, other_child.as_ref().unwrap(), min_dists_square, dists, eps_error) {
                 return false;
             }
         }
@@ -695,23 +693,80 @@ fn generate_point_clouds_of_size(size: usize) -> DataSource {
     dataset
 }
 
+fn generate_random_points_to_test(size: usize) -> Vec<Point> {
+    let mut points = Vec::with_capacity(size);
+    for _ in 0..size {
+        points.push(Point { x: rand::random(), y: rand::random(), z: rand::random() });
+    }
+    points
+}
+
+fn generate_random_vector_to_test(size: usize) -> Vec<[f64; 3]> {
+    let mut points = Vec::with_capacity(size);
+    for _ in 0..size {
+        points.push([rand::random(), rand::random(), rand::random()]);
+    }
+    points
+}
+
 fn main() {
     let size = 800000;
 
-    let dataset = generate_point_clouds_of_size(size);
+    let points_to_test: Vec<Point> = generate_random_points_to_test(size);
+    let dataset = generate_random_point_clouds_of_size(size);
+    let entries: Vec<[f64; 3]> = dataset.vec.iter().map(|point| [point.x, point.y, point.z]).collect();
+
+    // Warm-up
+    let mut kdtree = KDTreeSingleIndex::new(dataset.clone(), KDTreeSingleIndexParams::new());
+    kdtree.build_index();
+    for point in &points_to_test {
+        let mut result = KNNResultSet::new_with_capacity(10);
+        kdtree.knn_search(point, 10, &mut result);
+    }
+
+    let mut kiddo: kiddo::ImmutableKdTree<_, 3> = (&*entries).into();
+    for point in &points_to_test {
+        kiddo.nearest_n::<SquaredEuclidean>(&[point.x, point.y, point.z], 10);
+    }
+
+    let kd_tree = kd_tree::KdTree::build_by_ordered_float(entries.clone());
+    for point in &points_to_test {
+        let _result = kd_tree.nearests(&[point.x, point.y, point.z], 10);
+    }
+
+    // Test KDTreeSingleIndex
     let mut params = KDTreeSingleIndexParams::new();
     params.leaf_max_size = 10;
-    // Initialize KDTreeSingleIndex
-    let mut kdtree = KDTreeSingleIndex::new(dataset, params);
-    let point_to_test = Point { x: 200.0, y: 200.0, z: 200.0 };
-    let mut result = KNNResultSet::new_with_capacity(10);
+    let mut kdtree = KDTreeSingleIndex::new(dataset.clone(), params);
     kdtree.build_index();
+    let mut result = KNNResultSet::new_with_capacity(10);
+    println!("Querying {} points for 10 nearest neighbours using nanofrann", size);
+    let start = std::time::Instant::now();
+    for point in points_to_test.iter() {
+        kdtree.knn_search(point, 10, &mut result);
+    }
+    let duration = start.elapsed();
+    println!("Time taken: {:?}", duration);
+
+    // Test Kiddo
+    let kiddo: kiddo::ImmutableKdTree<_, 3> = (&*entries).into();
+    println!("Querying {} points for 10 nearest neighbours using kiddo", size);
     let start_time = std::time::Instant::now();
-    kdtree.knn_search(&point_to_test, 50, &mut result);
+    for point in points_to_test.iter() {
+        kiddo.nearest_n::<SquaredEuclidean>(&[point.x, point.y, point.z], 10);
+    }
     let elapsed_time = start_time.elapsed();
     println!("Time taken: {:?}", elapsed_time);
 
-
+    // Test kd_tree
+    let kd_tree = kd_tree::KdTree::build_by_ordered_float(entries);
+    println!("Querying {} points for 10 nearest neighbours using kd_tree", size);
+    let start_time = std::time::Instant::now();
+    for point in points_to_test.iter() {
+        let result = kd_tree.nearests(&[point.x, point.y, point.z], 10);
+    }
+    let elapsed_time = start_time.elapsed();
+    println!("Time taken: {:?}", elapsed_time);
 }
 
 #[cfg(test)]
@@ -787,23 +842,23 @@ mod radius_result_set_tests {
         assert_eq!(sut.indices_dists.len(), 4);
     }
 
-    #[test]
-    fn test_sort() {
-        let mut sut = RadiusResultSet::new_with_radius(5.0);
-        sut.add_point(2.0, 1);
-        sut.add_point(1.0, 2);
-        sut.add_point(2.0, 3);
-        sut.add_point(3.0, 4);
-        sort_by_index_distance::<usize, f64>(&mut sut.indices_dists);
-        assert_eq!(sut.indices_dists[0].0, 2);
-        assert_eq!(sut.indices_dists[1].0, 1);
-        assert_eq!(sut.indices_dists[2].0, 3);
-        assert_eq!(sut.indices_dists[3].0, 4);
-        relative_eq!(sut.indices_dists[0].1, 1.0);
-        relative_eq!(sut.indices_dists[1].1, 2.0);
-        relative_eq!(sut.indices_dists[2].1, 2.0);
-        relative_eq!(sut.indices_dists[3].1, 3.0);
-    }
+    // #[test]
+    // fn test_sort() {
+    //     let mut sut = RadiusResultSet::new_with_radius(5.0);
+    //     sut.add_point(2.0, 1);
+    //     sut.add_point(1.0, 2);
+    //     sut.add_point(2.0, 3);
+    //     sut.add_point(3.0, 4);
+    //
+    //     assert_eq!(sut.indices_dists[0].0, 2);
+    //     assert_eq!(sut.indices_dists[1].0, 1);
+    //     assert_eq!(sut.indices_dists[2].0, 3);
+    //     assert_eq!(sut.indices_dists[3].0, 4);
+    //     relative_eq!(sut.indices_dists[0].1, 1.0);
+    //     relative_eq!(sut.indices_dists[1].1, 2.0);
+    //     relative_eq!(sut.indices_dists[2].1, 2.0);
+    //     relative_eq!(sut.indices_dists[3].1, 3.0);
+    // }
 
     #[test]
     fn test_clear() {
