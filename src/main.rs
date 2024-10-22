@@ -38,6 +38,7 @@ use std::cmp::PartialEq;
 use std::ops::Index;
 
 trait ResultSet {
+    fn init(&mut self, indices: &mut Vec<usize>, dists: &mut Vec<f64>);
     fn size(&self) -> usize;
     fn is_full(&self) -> bool;
     fn add_point(&mut self, dist: f64, index: usize);
@@ -45,6 +46,7 @@ trait ResultSet {
 }
 
 // Version 1: used vectors
+#[derive(Debug)]
 struct KNNResultSet {
     indices: Vec<usize>,
     dists: Vec<f64>,
@@ -64,11 +66,12 @@ impl KNNResultSet {
                 capacity,
                 capacity,
             );
-            let dists = Vec::from_raw_parts(
+            let mut dists = Vec::from_raw_parts(
                 std::alloc::alloc(std::alloc::Layout::array::<f64>(capacity).unwrap()) as *mut f64,
                 capacity,
                 capacity,
             );
+            dists[capacity - 1] = f64::MAX;
             Self {
                 indices,
                 dists,
@@ -79,6 +82,13 @@ impl KNNResultSet {
     }
 }
 impl ResultSet for KNNResultSet {
+    fn init(&mut self, indices: &mut Vec<usize>, dists: &mut Vec<f64>) {
+        self.indices = indices.clone();
+        self.dists = dists.clone();
+        if self.capacity > 0 {
+            self.dists[self.capacity - 1] = f64::MAX;
+        }
+    }
     fn size(&self) -> usize {
         self.count
     }
@@ -144,6 +154,13 @@ impl RadiusResultSet {
 
 }
 impl ResultSet for RadiusResultSet {
+    fn init(&mut self, indices: &mut Vec<usize>, dists: &mut Vec<f64>) {
+        // self.indices = indices.clone();
+        // self.dists = dists.clone();
+        // if self.capacity > 0 {
+        //     self.dists[self.capacity - 1] = f64::MAX;
+        // }
+    }
     fn size(&self) -> usize {
         self.indices_dists.len()
     }
@@ -618,12 +635,18 @@ impl KDTreeSingleIndex {
         min_dists_square += cut_dists - dist;
         dists[index] = cut_dists;
         if min_dists_square * eps_error < result.worst_dist() {
-            return self.search_level(result, point, otherChild.as_ref().unwrap(), min_dists_square, dists, eps_error);
-        } else {
-            return false;
+            if !self.search_level(result, point, otherChild.as_ref().unwrap(), min_dists_square, dists, eps_error) {
+                return false;
+            }
         }
         dists[index] = dist;
         true
+    }
+    fn knn_search(&self, point: &Point, num_closest: usize, result: &mut dyn ResultSet)  {
+        let mut dists = vec![0.0; self.dim];
+        let eps_error = 1.0 + 1e-3;
+        let min_dists_square = self.compute_initial_distance(point, &mut dists);
+        self.search_level(result, point, self.root.as_ref().unwrap(), min_dists_square, &mut dists, eps_error);
     }
     fn dataset_get(&self, index: usize, dim: usize) -> f64 {
         self.dataset.get_point(index, dim)
@@ -822,5 +845,34 @@ mod kd_tree_test {
         }
 
         println!("{:?}", kdtree);
+    }
+
+    #[test]
+    fn test_knn_search() {
+        let mut dataset = DataSource::with_capacity(10);
+        dataset.add_point(0.0, 0.0, 0.0);
+        dataset.add_point(1.0, 1.0, 1.0);
+        dataset.add_point(2.0, 0.0, 0.0);
+        dataset.add_point(0.0, 2.0, 0.0);
+        dataset.add_point(0.0, 0.0, 2.0);
+        dataset.add_point(2.0, 2.0, 2.0);
+        dataset.add_point(0.0, 0.0, 2.0);
+        dataset.add_point(0.0, 2.0, 2.0);
+        dataset.add_point(0.1, 0.1, 0.1);
+        let mut params = KDTreeSingleIndexParams::new();
+        params.leaf_max_size = 2;
+        // Initialize KDTreeSingleIndex
+        let mut kdtree = KDTreeSingleIndex::new(dataset, params);
+
+        // Build the KD-tree index
+        kdtree.build_index();
+
+        // Check that the root node exists
+        assert!(kdtree.root.is_some(), "Root node should be initialized");
+        let point_to_test = Point { x: 0.0, y: 0.0, z: 0.0 };
+        let mut result = KNNResultSet::new_with_capacity(3);
+        let search_params = SearchParams::new();
+        kdtree.knn_search(&point_to_test, 3, &mut result);
+        println!("{:?}", result);
     }
 }
