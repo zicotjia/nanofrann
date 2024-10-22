@@ -134,6 +134,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "kd-tree"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5f89ee4e60e82cf7024e5e94618c646fbf61ce7501dc5898b3d12786442d3682"
+dependencies = [
+ "num-traits",
+ "ordered-float",
+ "paste",
+ "typenum",
+]
+
+[[package]]
 name = "kiddo"
 version = "4.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -179,6 +191,7 @@ name = "nanofrann"
 version = "0.1.0"
 dependencies = [
  "approx",
+ "kd-tree",
  "kiddo",
  "rand",
 ]
@@ -222,6 +235,12 @@ name = "overload"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b15813163c1d831bf4a13c3610c05c0d03b39feb07f7e09fa234dac9b15aaf39"
+
+[[package]]
+name = "paste"
+version = "1.0.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "pin-project-lite"
