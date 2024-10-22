@@ -36,6 +36,7 @@
 
 use std::cmp::PartialEq;
 use std::ops::Index;
+use kiddo::{ImmutableKdTree, KdTree, SquaredEuclidean};
 
 trait ResultSet {
     fn init(&mut self, indices: &mut Vec<usize>, dists: &mut Vec<f64>);
@@ -428,7 +429,7 @@ impl KDTreeSingleIndex {
             let mut mid = 0;
             let mut cut_feat: usize = 0;
             let mut cut_val = 0.0;
-            self.middle_split(self.vind[0] + left, right - left, &mut mid, &mut cut_feat, &mut cut_val, bounding_box);
+            self.middle_split(left, right - left, &mut mid, &mut cut_feat, &mut cut_val, bounding_box);
 
             let mut left_bounding_box = bounding_box.clone();
             left_bounding_box.bounds[cut_feat].high = cut_val;
@@ -644,7 +645,7 @@ impl KDTreeSingleIndex {
     }
     fn knn_search(&self, point: &Point, num_closest: usize, result: &mut dyn ResultSet)  {
         let mut dists = vec![0.0; self.dim];
-        let eps_error = 1.0 + 1e-3;
+        let eps_error = 1.0 + 1e-5;
         let min_dists_square = self.compute_initial_distance(point, &mut dists);
         self.search_level(result, point, self.root.as_ref().unwrap(), min_dists_square, &mut dists, eps_error);
     }
@@ -653,14 +654,51 @@ impl KDTreeSingleIndex {
     }
 }
 
+fn generate_random_point_clouds_of_size(size: usize) -> DataSource {
+    let mut dataset = DataSource::with_capacity(size);
+    for _ in 0..size {
+        dataset.add_point(rand::random(), rand::random(), rand::random());
+    }
+    dataset
+}
+
+fn generate_point_clouds_of_size(size: usize) -> DataSource {
+    let mut dataset = DataSource::with_capacity(size);
+    for i in 0..size {
+        dataset.add_point(i as f64, i as f64, i as f64);
+    }
+    dataset
+}
+
 fn main() {
-    let mut result = KNNResultSet::new_with_capacity(10);
-    println!("{:?}", result.indices);
-    result.add_point(10.0, 10);
-    result.add_point(11.0, 11);
-    result.add_point(1.0, 12);
-    println!("{:?}", result.indices);
-    println!("{:?}", result.dists);
+    let size = 100;
+    let dataset = generate_point_clouds_of_size(size);
+    let mut params = KDTreeSingleIndexParams::new();
+    params.leaf_max_size = 5;
+    // Initialize KDTreeSingleIndex
+    let mut kdtree = KDTreeSingleIndex::new(dataset, params);
+    let point_to_test = Point { x: 200.0, y: 200.0, z: 200.0 };
+    let mut result = KNNResultSet::new_with_capacity(16);
+    kdtree.build_index();
+    let start_time = std::time::Instant::now();
+    kdtree.knn_search(&point_to_test, 16, &mut result);
+    let elapsed_time = start_time.elapsed();
+    println!("Time taken: {:?}", elapsed_time);
+    println!("{:?}", result);
+
+    // test speed of kiddo
+    let size = 100;
+    let mut entries: Vec<[f64; 3]> = Vec::with_capacity(size);
+    for i in 0..size {
+        entries.push([i as f64, i as f64, i as f64]);
+    }
+    let kiddo: kiddo::ImmutableKdTree<_, 3> = (&*entries).into();
+    let point_to_test = [200.0, 200.0, 200.0];
+    let start_time = std::time::Instant::now();
+    let result = kiddo.nearest_n::<SquaredEuclidean>(&point_to_test, 16);
+    let elapsed_time = start_time.elapsed();
+    println!("Time taken: {:?}", elapsed_time);
+    println!("{:?}", result);
 }
 
 #[cfg(test)]
