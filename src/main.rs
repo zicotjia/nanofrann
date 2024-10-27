@@ -2,50 +2,86 @@ mod common;
 mod tree;
 
 use kiddo::SquaredEuclidean;
-use tree::nanofrann_f64::*;
+use num_traits::{FromPrimitive, Num};
+use rand::distr::{Distribution, Standard};
+use tree::nanofrann_float::*;
 use common::common::*;
 
-fn generate_random_point_clouds_of_size(size: usize) -> DataSource<f64> {
-    let mut dataset = DataSource::with_capacity(size);
+use rand::random;
+use crate::common::min_max::MinMax;
+
+fn generate_random_point_clouds_of_size<T>(size: usize) -> DataSource<T>
+where
+    T: Num + Copy + MinMax + PartialOrd + FromPrimitive + std::ops::AddAssign, Standard: Distribution<T>
+{
+    let mut dataset = DataSource::<T>::with_capacity(size);
     for _ in 0..size {
-        dataset.add_point(rand::random(), rand::random(), rand::random());
+        dataset.add_point(random::<T>(), random::<T>(), random::<T>());
     }
     dataset
 }
 
-fn generate_point_clouds_of_size(size: usize) -> DataSource<f64> {
-    let mut dataset = DataSource::with_capacity(size);
+fn generate_point_clouds_of_size<T>(size: usize) -> DataSource<T>
+where
+    T: Num + Copy + MinMax + PartialOrd + FromPrimitive + std::ops::AddAssign, Standard: Distribution<T>
+{
+    let mut dataset = DataSource::<T>::with_capacity(size);
     for i in 0..(size / 2) {
-        dataset.add_point(i as f64, i as f64, i as f64);
-        dataset.add_point((i + size / 2) as f64, (i + size / 2) as f64, (i + size / 2) as f64);
+        let point1 = T::from_usize(i).unwrap_or(T::ZERO);
+        let point2 = T::from_usize(i + size / 2).unwrap_or(T::ZERO);
+        dataset.add_point(point1, point1, point1);
+        dataset.add_point(point2, point2, point2);
     }
     dataset
 }
 
-fn generate_random_points_to_test(size: usize) -> Vec<Point<f64>> {
+fn generate_sorted_point_clouds_of_size<T>(size: usize) -> DataSource<T>
+where
+    T: Num + Copy + MinMax + PartialOrd + FromPrimitive + std::ops::AddAssign, Standard: Distribution<T>
+{
+    let mut dataset = DataSource::<T>::with_capacity(size);
+    for i in 0..size {
+        let point1 = T::from_usize(i).unwrap_or(T::ZERO);
+        dataset.add_point(point1, point1, point1);
+    }
+    dataset
+}
+
+fn generate_random_points_to_test<T>(size: usize) -> Vec<Point<T>>
+where
+    T: Num + Copy + MinMax + PartialOrd + FromPrimitive + std::ops::AddAssign, Standard: Distribution<T>
+{
     let mut points = Vec::with_capacity(size);
     for _ in 0..size {
-        points.push(Point { x: rand::random(), y: rand::random(), z: rand::random() });
+        points.push(Point {
+            x: random::<T>(),
+            y: random::<T>(),
+            z: random::<T>(),
+        });
     }
     points
 }
 
-fn generate_random_vector_to_test(size: usize) -> Vec<[f64; 3]> {
+fn generate_random_vector_to_test<T>(size: usize) -> Vec<[T; 3]>
+where
+    T: Num + Copy + MinMax + PartialOrd + FromPrimitive + std::ops::AddAssign, Standard: Distribution<T>
+{
     let mut points = Vec::with_capacity(size);
     for _ in 0..size {
-        points.push([rand::random(), rand::random(), rand::random()]);
+        points.push([random::<T>(), random::<T>(), random::<T>()]);
     }
     points
 }
+
 
 fn main() {
     let size = 800000;
-    let test_size = 1;
+    let test_size = 1000;
 
-    let dataset = generate_random_point_clouds_of_size(size);
-    let entries: Vec<[f64; 3]> = dataset.vec.iter().map(|point| [point.x, point.y, point.z]).collect();
-    let points_to_test: Vec<Point<f64>> = generate_random_points_to_test(test_size);
-    let points_to_test_vec: Vec<[f64; 3]> = points_to_test.iter().map(|point| [point.x, point.y, point.z]).collect();
+    let dataset = generate_random_point_clouds_of_size::<f32>(size);
+    let entries: Vec<[f64; 3]> = dataset.vec.iter().map(|point| [point.x as f64, point.y as f64, point.z as f64]).collect();
+    let points_to_test: Vec<Point<f32>> = generate_random_points_to_test(test_size);
+    let points_to_test_vec: Vec<[f64; 3]> = points_to_test.iter().map(|point| [point.x as f64, point.y as f64, point.z as f64]).collect();
 
     // Build
     let mut kdtree = KDTreeSingleIndex::new(dataset.clone(), KDTreeSingleIndexParams::new());
@@ -80,8 +116,8 @@ fn main() {
 
     // Test KDTreeSingleIndex
     let mut params = KDTreeSingleIndexParams::new();
-    params.leaf_max_size = 10;
-    let mut kdtree = KDTreeSingleIndex::new(dataset.clone(), params);
+    // params.leaf_max_size = 10;
+    // let mut kdtree = KDTreeSingleIndex::new(dataset.clone(), params);
     kdtree.build_index();
     println!("Querying {} points for 10 nearest neighbours using nanofrann", test_size);
     let start = std::time::Instant::now();

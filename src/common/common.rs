@@ -32,6 +32,7 @@
 use std::cmp::PartialEq;
 use std::ops::Index;
 use kiddo::{ImmutableKdTree, KdTree, SquaredEuclidean};
+use crate::common::min_max::MinMax;
 
 pub(crate) trait ResultSet<DistType> {
     fn init(&mut self, indices: &mut Vec<usize>, dists: &mut Vec<DistType>);
@@ -46,15 +47,12 @@ pub(crate) trait ResultSet<DistType> {
 pub(crate) struct KNNResultSet<DistType> {
     pub(crate) indices: Vec<usize>,
     pub(crate) dists: Vec<DistType>,
-    capacity: usize,
-    count: usize,
+    pub(crate) capacity: usize,
+    pub(crate) count: usize,
 }
 
-impl KNNResultSet<f64> {
-
-    // Since size is fixed, we can just offload all the allocation work in the initialization
-    // Remove overhead of calling Vec::push()
-    #[inline]
+impl<T> KNNResultSet<T>
+where T : PartialEq + PartialOrd + Copy + MinMax {
     pub(crate) fn new_with_capacity(capacity: usize) -> Self {
         unsafe {
             // Fastest way to allocate without default value that i know of
@@ -64,11 +62,11 @@ impl KNNResultSet<f64> {
                 capacity,
             );
             let mut dists = Vec::from_raw_parts(
-                std::alloc::alloc(std::alloc::Layout::array::<f64>(capacity).unwrap()) as *mut f64,
+                std::alloc::alloc(std::alloc::Layout::array::<T>(capacity).unwrap()) as *mut T,
                 capacity,
                 capacity,
             );
-            dists[capacity - 1] = f64::MAX;
+            dists[capacity - 1] = T::MAX;
             Self {
                 indices,
                 dists,
@@ -78,25 +76,26 @@ impl KNNResultSet<f64> {
         }
     }
 }
-impl ResultSet<f64> for KNNResultSet<f64> {
-    #[inline]
-    fn init(&mut self, indices: &mut Vec<usize>, dists: &mut Vec<f64>) {
+
+impl<T> ResultSet<T> for KNNResultSet<T>
+where T : PartialOrd + Copy + MinMax {
+    fn init(&mut self, indices: &mut Vec<usize>, dists: &mut Vec<T>) {
         self.indices = indices.clone();
         self.dists = dists.clone();
         if self.capacity > 0 {
-            self.dists[self.capacity - 1] = f64::MAX;
+            self.dists[self.capacity - 1] = T::MAX;
         }
     }
-    #[inline]
+
     fn size(&self) -> usize {
         self.count
     }
-    #[inline]
+
     fn is_full(&self) -> bool {
         self.count == self.capacity
     }
-    #[inline]
-    fn add_point(&mut self, dist: f64, index: usize) -> bool {
+
+    fn add_point(&mut self, dist: T, index: usize) -> bool {
         let mut i = self.count;
         while i > 0 {
             if self.dists[i - 1] > dist {
@@ -118,71 +117,72 @@ impl ResultSet<f64> for KNNResultSet<f64> {
         }
         true
     }
-    #[inline]
-    fn worst_dist(&self) -> f64 {
+
+    fn worst_dist(&self) -> T {
         self.dists[self.capacity - 1]
     }
 }
+
 pub(crate) struct RadiusResultSet<DistType> {
     pub(crate) radius: DistType,
     pub(crate) indices_dists: Vec<(usize, DistType)>, // (Index, Distance)
 }
 
-
-impl RadiusResultSet<f64> {
-    #[inline]
-    pub fn new_with_radius(radius: f64) -> Self {
+impl<T> RadiusResultSet<T>
+where T : PartialOrd + Copy + MinMax  {
+    
+    pub fn new_with_radius(radius: T) -> Self {
         Self {
             radius,
             indices_dists: vec![]
         }
     }
-    #[inline]
+    
     pub fn clear(&mut self) {
         self.indices_dists.clear();
     }
 
-    #[inline]
-    pub fn set_radius_and_clear(&mut self, radius: f64) {
+    
+    pub fn set_radius_and_clear(&mut self, radius: T) {
         self.radius = radius;
         self.clear();
     }
 
-    #[inline]
-    pub fn worst_item(&self) -> (usize, f64) {
+    
+    pub fn worst_item(&self) -> (usize, T) {
         assert!(self.indices_dists.len() > 0);
         self.indices_dists.iter()
             .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
-            .copied().unwrap() // To return an owned (usize, f64) instead of a reference
+            .copied().unwrap() // To return an owned (usize, T) instead of a reference
     }
 
 }
-impl ResultSet<f64> for RadiusResultSet<f64> {
-    fn init(&mut self, indices: &mut Vec<usize>, dists: &mut Vec<f64>) {
+impl<T> ResultSet<T> for RadiusResultSet<T>
+where T : PartialOrd + Copy + MinMax {
+    fn init(&mut self, indices: &mut Vec<usize>, dists: &mut Vec<T>) {
         // self.indices = indices.clone();
         // self.dists = dists.clone();
         // if self.capacity > 0 {
         //     self.dists[self.capacity - 1] = f64::MAX;
         // }
     }
-    #[inline]
+    
     fn size(&self) -> usize {
         self.indices_dists.len()
     }
 
-    #[inline]
+    
     fn is_full(&self) -> bool {
         true
     }
 
-    #[inline]
-    fn add_point(&mut self, dist: f64, index: usize) -> bool{
+    
+    fn add_point(&mut self, dist: T, index: usize) -> bool{
         if dist < self.radius { self.indices_dists.push((index, dist)) };
         true
     }
 
-    #[inline]
-    fn worst_dist(&self) -> f64 {
+    fn worst_dist(&self) -> T {
         self.radius
     }
 }
@@ -205,12 +205,12 @@ pub(crate) struct SearchParams<DistType> {
     sorted: bool,
 }
 
-impl SearchParams<f64> {
-    #[inline]
+impl<T> SearchParams<T>
+where T : MinMax {
     pub fn new() -> Self {
         Self {
             checks: 32,
-            eps: 0.0,
+            eps: T::ZERO,
             sorted: true,
         }
     }
@@ -223,8 +223,8 @@ pub(crate) struct Point<DistType> {
     pub(crate) z: DistType,
 }
 
-impl Index<usize> for Point<f64> {
-    type Output = f64;
+impl<T> Index<usize> for Point<T> {
+    type Output = T;
     fn index(&self, index: usize) -> &Self::Output {
         match index {
             0 => &self.x,
@@ -241,31 +241,33 @@ pub(crate) struct DataSource<DistType> {
     pub(crate) vec: Vec<Point<DistType>>
 }
 
-impl DataSource<f64> {
-    #[inline]
+impl<T> DataSource<T>
+where T : PartialEq + PartialOrd + Copy + MinMax +
+std::ops::Sub<Output = T> + std::ops::Mul<Output = T> + std::ops::Add<Output = T> + std::ops::AddAssign {
+    
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             vec: Vec::with_capacity(capacity)
         }
     }
 
-    #[inline]
-    pub fn add_point(&mut self, x: f64, y: f64, z: f64) {
+    
+    pub fn add_point(&mut self, x: T, y: T, z: T) {
         self.vec.push(Point { x, y, z });
     }
 
-    #[inline]
+    
     pub fn size(&self) -> usize {
         self.vec.len()
     }
 
-    #[inline]
+    
     pub fn get_point_count(&self) -> usize {
         self.vec.len()
     }
 
-    #[inline]
-    pub fn get_point(&self, index: usize, dim: usize) -> f64 {
+    
+    pub fn get_point(&self, index: usize, dim: usize) -> T {
         match dim {
             0 => self.vec[index].x,
             1 => self.vec[index].y,
@@ -274,9 +276,9 @@ impl DataSource<f64> {
         }
     }
 
-    #[inline]
-    pub fn get_squared_distance(&self, point1: &Point<f64>, point2_idx: usize) -> f64 {
-        let mut dist = 0.0;
+    
+    pub fn get_squared_distance(&self, point1: &Point<T>, point2_idx: usize) -> T {
+        let mut dist = T::ZERO;
         let point2 = &self.vec[point2_idx];
         for i in 0..3 {
             let diff = point1[i] - point2[i];
@@ -291,7 +293,6 @@ pub(crate) struct KDTreeSingleIndexParams {
 }
 
 impl KDTreeSingleIndexParams {
-    #[inline]
     pub fn new() -> Self {
         Self {
             leaf_max_size: 10
@@ -300,22 +301,22 @@ impl KDTreeSingleIndexParams {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct Node {
-    pub(crate) node_type: NodeType,         // Replaces the union
-    pub(crate) child1: Option<Box<Node>>,   // Replaces Node* child1
-    pub(crate) child2: Option<Box<Node>>,   // Replaces Node* child2
+pub(crate) struct Node<DistType> {
+    pub(crate) node_type: NodeType<DistType>,         // Replaces the union
+    pub(crate) child1: Option<Box<Node<DistType>>>,   // Replaces Node* child1
+    pub(crate) child2: Option<Box<Node<DistType>>>,   // Replaces Node* child2
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum NodeType {
+pub enum NodeType<DistType> {
     Leaf {
         left: usize,
         right: usize,
     },
     NonLeaf {
         div_feat: i32,      // Dimension used for subdivision
-        div_low: f64,      // The low value for subdivision
-        div_high: f64,     // The high value for subdivision
+        div_low: DistType,      // The low value for subdivision
+        div_high: DistType,     // The high value for subdivision
     },
 }
 
@@ -330,12 +331,12 @@ pub(crate) struct BoundingBox<DistType> {
     pub(crate) bounds: Vec<Interval<DistType>>,
 }
 
-impl BoundingBox<f64> {
-    #[inline]
+impl<T> BoundingBox<T>
+where T : PartialEq + PartialOrd + Copy + MinMax {
     pub fn new(dim: usize) -> Self {
         let mut bounds = Vec::with_capacity(dim);
         for _ in 0..dim {
-            bounds.push(Interval { low: 0.0, high: 0.0 });
+            bounds.push(Interval { low: T::ZERO, high: T::ZERO });
         }
         Self { bounds }
     }
