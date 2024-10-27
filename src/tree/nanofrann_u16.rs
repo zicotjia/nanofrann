@@ -1,4 +1,4 @@
-// DistType = f64
+// DistType = u16
 // IndexType = usize
 
 // Version 3: unsafe rust
@@ -18,9 +18,9 @@ pub(crate) struct KDTreeSingleIndex<DistType> {
 }
 
 
-impl KDTreeSingleIndex<f64> {
+impl KDTreeSingleIndex<u16> {
     #[inline]
-    pub fn new(dataset: DataSource<f64>, params: KDTreeSingleIndexParams) -> Self {
+    pub fn new(dataset: DataSource<u16>, params: KDTreeSingleIndexParams) -> Self {
         let dim = 3;
         let size = dataset.size();
         let mut vind = Vec::with_capacity(size);
@@ -77,7 +77,7 @@ impl KDTreeSingleIndex<f64> {
     }
 
     #[inline]
-    pub fn divide_tree(&mut self, left: usize, right: usize, bounding_box: &mut BoundingBox<f64>) -> Node<f64> {
+    pub fn divide_tree(&mut self, left: usize, right: usize, bounding_box: &mut BoundingBox<u16>) -> Node<u16> {
         let node;
         if (right - left) <= self.leaf_size {
             // Explicitly give the node a Leaf type
@@ -105,7 +105,7 @@ impl KDTreeSingleIndex<f64> {
         } else {
             let mut mid = 0;
             let mut cut_feat: usize = 0;
-            let mut cut_val = 0.0;
+            let mut cut_val = 0;
             self.middle_split(left, right - left, &mut mid, &mut cut_feat, &mut cut_val, bounding_box);
 
             let mut left_bounding_box = bounding_box.clone();
@@ -134,8 +134,8 @@ impl KDTreeSingleIndex<f64> {
 
     #[inline]
     fn middle_split(&mut self, ind: usize, count: usize, index: &mut usize,
-                    cut_feat: &mut usize, cut_val: &mut f64, bounding_box: &BoundingBox<f64>) {
-        let eps = 1e-5;
+                    cut_feat: &mut usize, cut_val: &mut u16, bounding_box: &BoundingBox<u16>) {
+        let eps = 0;
         let mut max_span = bounding_box.bounds[0].high - bounding_box.bounds[0].low;
         for i in 1..self.dim {
             let span = bounding_box.bounds[i].high - bounding_box.bounds[i].low;
@@ -143,15 +143,15 @@ impl KDTreeSingleIndex<f64> {
                 max_span = span;
             }
         }
-        let mut max_spread = -1.0;
+        let mut max_spread = 0;
         *cut_feat = 0;
-        let mut min_element = 0.0;
-        let mut max_element = 0.0;
+        let mut min_element = 0;
+        let mut max_element = 0;
         for i in 0..self.dim {
             let span = bounding_box.bounds[i].high - bounding_box.bounds[i].low;
-            if span > (1.0 - eps) * max_span {
-                let mut min_element_: f64 = 0.0;
-                let mut max_element_: f64 = 0.0;
+            if span > (1 - eps) * max_span {
+                let mut min_element_: u16 = 0;
+                let mut max_element_: u16 = 0;
                 self.compute_min_max(ind, count, i, &mut min_element_, &mut max_element_);
                 let spread = max_element_ - min_element_;
                 if spread > max_spread {
@@ -162,7 +162,7 @@ impl KDTreeSingleIndex<f64> {
                 }
             }
         }
-        let split_val = 0.5 * (bounding_box.bounds[*cut_feat].low + bounding_box.bounds[*cut_feat].high);
+        let split_val = (bounding_box.bounds[*cut_feat].low + bounding_box.bounds[*cut_feat].high) / 2;
 
         if split_val < min_element {
             *cut_val = min_element;
@@ -184,7 +184,7 @@ impl KDTreeSingleIndex<f64> {
     }
 
     #[inline]
-    fn compute_min_max(&self, ind: usize, count: usize, cut_feat: usize, min_element: &mut f64, max_element: &mut f64) {
+    fn compute_min_max(&self, ind: usize, count: usize, cut_feat: usize, min_element: &mut u16, max_element: &mut u16) {
         *min_element = self.dataset.get_point(self.vind[ind], cut_feat);
         *max_element = *min_element;
         for i in 1..count {
@@ -207,7 +207,7 @@ impl KDTreeSingleIndex<f64> {
     *  dataset[ind[lim1..lim2-1]][cutfeat]==cutval
     *  dataset[ind[lim2..count]][cutfeat]>cutval
     */
-    fn plane_split(&mut self, ind: usize, count: usize, cut_feat: usize, cut_val: &mut f64, lim1: &mut usize, lim2: &mut usize) {
+    fn plane_split(&mut self, ind: usize, count: usize, cut_feat: usize, cut_val: &mut u16, lim1: &mut usize, lim2: &mut usize) {
         let mut left = 0;
         let mut right = count - 1;
         // This is a variation of the Dutch National Flag problem
@@ -251,15 +251,15 @@ impl KDTreeSingleIndex<f64> {
 
     // Squared Euclidean
     #[inline]
-    fn accum_dist(a: f64, b: f64) -> f64 {
+    fn accum_dist(a: u16, b: u16) -> u16 {
         let diff = a - b;
         diff * diff
     }
 
     // Compute how far the point is from the bounding box
     #[inline]
-    fn compute_initial_distance(&self, point: &Point<f64>, dists: &mut Vec<f64>) -> f64 {
-        let mut dist_square: f64 = 0.0;
+    fn compute_initial_distance(&self, point: &Point<u16>, dists: &mut Vec<u16>) -> u16 {
+        let mut dist_square: u16 = 0;
         for i in 0..self.dim {
             if point[i] < self.root_bounding_box.bounds[i].low {
                 dists[i] = Self::accum_dist(point[i], self.root_bounding_box.bounds[i].low);
@@ -274,8 +274,8 @@ impl KDTreeSingleIndex<f64> {
     }
 
     #[inline]
-    fn search_level(&self, result: &mut dyn ResultSet<f64>, point: &Point<f64>,
-                    node: &Node<f64>, mut min_dists_square: f64, dists: &mut Vec<f64>, eps_error: f64) -> bool {
+    fn search_level(&self, result: &mut dyn ResultSet<u16>, point: &Point<u16>,
+                    node: &Node<u16>, mut min_dists_square: u16, dists: &mut Vec<u16>, eps_error: u16) -> bool {
         if matches!(node.node_type, NodeType::Leaf { .. }) {
             let worst_dist = result.worst_dist();
             let NodeType::Leaf { left, right } = node.node_type else { return false; };
@@ -298,7 +298,7 @@ impl KDTreeSingleIndex<f64> {
         let diff2 = val - div_high;
 
         let (best_child, other_child, cut_dists) =
-            if diff1 + diff2 < 0.0 {
+            if diff1 + diff2 < 0 {
                 (&node.child1, &node.child2, Self::accum_dist(val, div_high))
             } else {
                 (&node.child2, &node.child1, Self::accum_dist(val, div_low))
@@ -319,14 +319,14 @@ impl KDTreeSingleIndex<f64> {
         true
     }
     #[inline]
-    pub(crate) fn knn_search(&self, point: &Point<f64>, num_closest: usize, result: &mut dyn ResultSet<f64>)  {
-        let mut dists = vec![0.0; self.dim];
-        let eps_error = 1.0 + 1e-5;
+    pub(crate) fn knn_search(&self, point: &Point<u16>, num_closest: usize, result: &mut dyn ResultSet<u16>)  {
+        let mut dists = vec![0; self.dim];
+        let eps_error = 1;
         let min_dists_square = self.compute_initial_distance(point, &mut dists);
         self.search_level(result, point, self.root.as_ref().unwrap(), min_dists_square, &mut dists, eps_error);
     }
     #[inline]
-    fn dataset_get(&self, index: usize, dim: usize) -> f64 {
+    fn dataset_get(&self, index: usize, dim: usize) -> u16 {
         self.dataset.get_point(index, dim)
     }
 }

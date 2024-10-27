@@ -193,6 +193,7 @@ dependencies = [
  "approx",
  "kd-tree",
  "kiddo",
+ "num-traits",
  "rand",
 ]
 

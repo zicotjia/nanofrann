@@ -40,7 +40,7 @@ fn generate_random_vector_to_test(size: usize) -> Vec<[f64; 3]> {
 
 fn main() {
     let size = 800000;
-    let test_size = 1;
+    let test_size = 100;
 
     let dataset = generate_random_point_clouds_of_size(size);
     let entries: Vec<[f64; 3]> = dataset.vec.iter().map(|point| [point.x, point.y, point.z]).collect();
@@ -66,7 +66,7 @@ fn main() {
 
     // Warm-up
     for point in &points_to_test {
-        let mut result_0 = KNNResultSet::new_with_capacity(10);
+        let mut result_0 = KNNResultSet::<f64>::new_with_capacity(10);
         kdtree.knn_search(point, 10, &mut result_0);
     }
 
@@ -86,7 +86,7 @@ fn main() {
     println!("Querying {} points for 10 nearest neighbours using nanofrann", test_size);
     let start = std::time::Instant::now();
     for point in points_to_test.iter() {
-        let mut result = KNNResultSet::new_with_capacity(10);
+        let mut result = KNNResultSet::<f64>::new_with_capacity(10);
         kdtree.knn_search(point, 10, &mut result);
     }
     let duration = start.elapsed();
@@ -113,7 +113,7 @@ fn main() {
     println!("Time taken: {:?}", elapsed_time);
 
     // Test correctness
-    let mut result_nano = KNNResultSet::new_with_capacity(10);
+    let mut result_nano = KNNResultSet::<f64>::new_with_capacity(10);
     kdtree.knn_search(&points_to_test[0], 10, &mut result_nano);
     let result_kiddo = kiddo.nearest_n::<SquaredEuclidean>(&points_to_test_vec[0], 10);
     let result_kiddo_indices: Vec<u64> = result_kiddo.iter().map(|neigbour| neigbour.item).collect();
