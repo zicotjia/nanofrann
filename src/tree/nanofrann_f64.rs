@@ -7,13 +7,13 @@ use crate::common::common::*;
 #[derive(Debug)]
 pub(crate) struct KDTreeSingleIndex<DistType> {
     // Indices to points in the dataset
-    vind: Vec<usize>,
-    leaf_size: usize,
-    dataset: DataSource<DistType>,
+    pub(crate) vind: Vec<usize>,
+    pub(crate) leaf_size: usize,
+    pub(crate) dataset: DataSource<DistType>,
     pub(crate) root: Option<Box<Node<DistType>>>,
-    size: usize,
-    size_at_index_build: usize,
-    dim: usize,
+    pub(crate) size: usize,
+    pub(crate) size_at_index_build: usize,
+    pub(crate) dim: usize,
     pub(crate) root_bounding_box: BoundingBox<DistType>,
 }
 

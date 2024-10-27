@@ -3,20 +3,7 @@
 
 // Version 3: unsafe rust
 use crate::common::common::*;
-
-#[derive(Debug)]
-pub(crate) struct KDTreeSingleIndex<DistType> {
-    // Indices to points in the dataset
-    vind: Vec<usize>,
-    leaf_size: usize,
-    dataset: DataSource<DistType>,
-    pub(crate) root: Option<Box<Node<DistType>>>,
-    size: usize,
-    size_at_index_build: usize,
-    dim: usize,
-    pub(crate) root_bounding_box: BoundingBox<DistType>,
-}
-
+use crate::tree::nanofrann_f64::KDTreeSingleIndex;
 
 impl KDTreeSingleIndex<u16> {
     #[inline]
@@ -162,6 +149,7 @@ impl KDTreeSingleIndex<u16> {
                 }
             }
         }
+        assert!(max_spread > 0);
         let split_val = (bounding_box.bounds[*cut_feat].low + bounding_box.bounds[*cut_feat].high) / 2;
 
         if split_val < min_element {

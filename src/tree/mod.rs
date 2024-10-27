@@ -1,2 +1,2 @@
 pub(crate) mod nanofrann_f64;
-mod nanofrann_u16;
+pub(crate) mod nanofrann_u16;
