@@ -33,24 +33,24 @@ use std::cmp::PartialEq;
 use std::ops::Index;
 use kiddo::{ImmutableKdTree, KdTree, SquaredEuclidean};
 
-pub(crate) trait ResultSet {
-    fn init(&mut self, indices: &mut Vec<usize>, dists: &mut Vec<f64>);
+pub(crate) trait ResultSet<DistType> {
+    fn init(&mut self, indices: &mut Vec<usize>, dists: &mut Vec<DistType>);
     fn size(&self) -> usize;
     fn is_full(&self) -> bool;
-    fn add_point(&mut self, dist: f64, index: usize) -> bool;
-    fn worst_dist(&self) -> f64;
+    fn add_point(&mut self, dist: DistType, index: usize) -> bool;
+    fn worst_dist(&self) ->  DistType;
 }
 
 // Version 1: used vectors
 #[derive(Debug)]
-pub(crate) struct KNNResultSet {
+pub(crate) struct KNNResultSet<DistType> {
     pub(crate) indices: Vec<usize>,
-    pub(crate) dists: Vec<f64>,
+    pub(crate) dists: Vec<DistType>,
     capacity: usize,
     count: usize,
 }
 
-impl KNNResultSet {
+impl KNNResultSet<f64> {
 
     // Since size is fixed, we can just offload all the allocation work in the initialization
     // Remove overhead of calling Vec::push()
@@ -78,7 +78,7 @@ impl KNNResultSet {
         }
     }
 }
-impl ResultSet for KNNResultSet {
+impl ResultSet<f64> for KNNResultSet<f64> {
     #[inline]
     fn init(&mut self, indices: &mut Vec<usize>, dists: &mut Vec<f64>) {
         self.indices = indices.clone();
@@ -123,13 +123,13 @@ impl ResultSet for KNNResultSet {
         self.dists[self.capacity - 1]
     }
 }
-pub(crate) struct RadiusResultSet {
-    pub(crate) radius: f64,
-    pub(crate) indices_dists: Vec<(usize, f64)>, // (Index, Distance)
+pub(crate) struct RadiusResultSet<DistType> {
+    pub(crate) radius: DistType,
+    pub(crate) indices_dists: Vec<(usize, DistType)>, // (Index, Distance)
 }
 
 
-impl RadiusResultSet {
+impl RadiusResultSet<f64> {
     #[inline]
     pub fn new_with_radius(radius: f64) -> Self {
         Self {
@@ -157,7 +157,7 @@ impl RadiusResultSet {
     }
 
 }
-impl ResultSet for RadiusResultSet {
+impl ResultSet<f64> for RadiusResultSet<f64> {
     fn init(&mut self, indices: &mut Vec<usize>, dists: &mut Vec<f64>) {
         // self.indices = indices.clone();
         // self.dists = dists.clone();
@@ -331,7 +331,7 @@ pub(crate) struct Interval {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct  BoundingBox {
+pub(crate) struct BoundingBox {
     pub(crate) bounds: Vec<Interval>,
 }
 

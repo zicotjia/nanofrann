@@ -275,7 +275,7 @@ impl KDTreeSingleIndex {
     }
 
     #[inline]
-    fn search_level(&self, result: &mut dyn ResultSet, point: &Point,
+    fn search_level(&self, result: &mut dyn ResultSet<f64>, point: &Point,
                     node: &Node, mut min_dists_square: f64, dists: &mut Vec<f64>, eps_error: f64) -> bool {
         if matches!(node.node_type, NodeType::Leaf { .. }) {
             let worst_dist = result.worst_dist();
@@ -320,7 +320,7 @@ impl KDTreeSingleIndex {
         true
     }
     #[inline]
-    pub(crate) fn knn_search(&self, point: &Point, num_closest: usize, result: &mut dyn ResultSet)  {
+    pub(crate) fn knn_search(&self, point: &Point, num_closest: usize, result: &mut dyn ResultSet<f64>)  {
         let mut dists = vec![0.0; self.dim];
         let eps_error = 1.0 + 1e-5;
         let min_dists_square = self.compute_initial_distance(point, &mut dists);
