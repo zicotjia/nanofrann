@@ -5,7 +5,7 @@ use kiddo::SquaredEuclidean;
 use tree::nanofrann_f64::*;
 use common::common::*;
 
-fn generate_random_point_clouds_of_size(size: usize) -> DataSource {
+fn generate_random_point_clouds_of_size(size: usize) -> DataSource<f64> {
     let mut dataset = DataSource::with_capacity(size);
     for _ in 0..size {
         dataset.add_point(rand::random(), rand::random(), rand::random());
@@ -13,7 +13,7 @@ fn generate_random_point_clouds_of_size(size: usize) -> DataSource {
     dataset
 }
 
-fn generate_point_clouds_of_size(size: usize) -> DataSource {
+fn generate_point_clouds_of_size(size: usize) -> DataSource<f64> {
     let mut dataset = DataSource::with_capacity(size);
     for i in 0..(size / 2) {
         dataset.add_point(i as f64, i as f64, i as f64);
@@ -22,7 +22,7 @@ fn generate_point_clouds_of_size(size: usize) -> DataSource {
     dataset
 }
 
-fn generate_random_points_to_test(size: usize) -> Vec<Point> {
+fn generate_random_points_to_test(size: usize) -> Vec<Point<f64>> {
     let mut points = Vec::with_capacity(size);
     for _ in 0..size {
         points.push(Point { x: rand::random(), y: rand::random(), z: rand::random() });
@@ -40,11 +40,11 @@ fn generate_random_vector_to_test(size: usize) -> Vec<[f64; 3]> {
 
 fn main() {
     let size = 800000;
-    let test_size = 800000;
+    let test_size = 1;
 
     let dataset = generate_random_point_clouds_of_size(size);
     let entries: Vec<[f64; 3]> = dataset.vec.iter().map(|point| [point.x, point.y, point.z]).collect();
-    let points_to_test: Vec<Point> = generate_random_points_to_test(test_size);
+    let points_to_test: Vec<Point<f64>> = generate_random_points_to_test(test_size);
     let points_to_test_vec: Vec<[f64; 3]> = points_to_test.iter().map(|point| [point.x, point.y, point.z]).collect();
 
     // Build
@@ -83,10 +83,10 @@ fn main() {
     params.leaf_max_size = 10;
     let mut kdtree = KDTreeSingleIndex::new(dataset.clone(), params);
     kdtree.build_index();
-    let mut result = KNNResultSet::new_with_capacity(10);
     println!("Querying {} points for 10 nearest neighbours using nanofrann", test_size);
     let start = std::time::Instant::now();
     for point in points_to_test.iter() {
+        let mut result = KNNResultSet::new_with_capacity(10);
         kdtree.knn_search(point, 10, &mut result);
     }
     let duration = start.elapsed();

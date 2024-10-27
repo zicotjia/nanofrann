@@ -199,13 +199,13 @@ impl ResultSet<f64> for RadiusResultSet<f64> {
 //     });
 // }
 
-pub(crate) struct SearchParams {
+pub(crate) struct SearchParams<DistType> {
     checks: usize,
-    eps: f64,
+    eps: DistType,
     sorted: bool,
 }
 
-impl SearchParams {
+impl SearchParams<f64> {
     #[inline]
     pub fn new() -> Self {
         Self {
@@ -216,19 +216,14 @@ impl SearchParams {
     }
 }
 
-pub(crate) struct KDTree {
-    vind: Vec<usize>,
-    leaf_size: usize,
-}
-
 #[derive(Clone, Debug)]
-pub(crate) struct Point {
-    pub(crate) x: f64,
-    pub(crate) y: f64,
-    pub(crate) z: f64,
+pub(crate) struct Point<DistType> {
+    pub(crate) x: DistType,
+    pub(crate) y: DistType,
+    pub(crate) z: DistType,
 }
 
-impl Index<usize> for Point {
+impl Index<usize> for Point<f64> {
     type Output = f64;
     fn index(&self, index: usize) -> &Self::Output {
         match index {
@@ -242,11 +237,11 @@ impl Index<usize> for Point {
 
 // Hard code a data source for the KDTree
 #[derive(Clone, Debug)]
-pub(crate) struct DataSource {
-    pub(crate) vec: Vec<Point>
+pub(crate) struct DataSource<DistType> {
+    pub(crate) vec: Vec<Point<DistType>>
 }
 
-impl DataSource {
+impl DataSource<f64> {
     #[inline]
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
@@ -280,7 +275,7 @@ impl DataSource {
     }
 
     #[inline]
-    pub fn get_squared_distance(&self, point1: &Point, point2_idx: usize) -> f64 {
+    pub fn get_squared_distance(&self, point1: &Point<f64>, point2_idx: usize) -> f64 {
         let mut dist = 0.0;
         let point2 = &self.vec[point2_idx];
         for i in 0..3 {
@@ -325,17 +320,17 @@ pub enum NodeType {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct Interval {
-    pub(crate) low: f64,
-    pub(crate) high: f64,
+pub(crate) struct Interval<DistType> {
+    pub(crate) low: DistType,
+    pub(crate) high: DistType,
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct BoundingBox {
-    pub(crate) bounds: Vec<Interval>,
+pub(crate) struct BoundingBox<DistType> {
+    pub(crate) bounds: Vec<Interval<DistType>>,
 }
 
-impl BoundingBox {
+impl BoundingBox<f64> {
     #[inline]
     pub fn new(dim: usize) -> Self {
         let mut bounds = Vec::with_capacity(dim);

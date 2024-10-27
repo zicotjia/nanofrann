@@ -6,22 +6,22 @@
 use crate::common::common::*;
 
 #[derive(Debug)]
-pub(crate) struct KDTreeSingleIndex {
+pub(crate) struct KDTreeSingleIndex<DistType> {
     // Indices to points in the dataset
     vind: Vec<usize>,
     leaf_size: usize,
-    dataset: DataSource,
+    dataset: DataSource<DistType>,
     pub(crate) root: Option<Box<Node>>,
     size: usize,
     size_at_index_build: usize,
     dim: usize,
-    pub(crate) root_bounding_box: BoundingBox,
+    pub(crate) root_bounding_box: BoundingBox<DistType>,
 }
 
 
-impl KDTreeSingleIndex {
+impl KDTreeSingleIndex<f64> {
     #[inline]
-    pub fn new(dataset: DataSource, params: KDTreeSingleIndexParams) -> Self {
+    pub fn new(dataset: DataSource<f64>, params: KDTreeSingleIndexParams) -> Self {
         let dim = 3;
         let size = dataset.size();
         let mut vind = Vec::with_capacity(size);
@@ -78,7 +78,7 @@ impl KDTreeSingleIndex {
     }
 
     #[inline]
-    pub fn divide_tree(&mut self, left: usize, right: usize, bounding_box: &mut BoundingBox) -> Node {
+    pub fn divide_tree(&mut self, left: usize, right: usize, bounding_box: &mut BoundingBox<f64>) -> Node {
         let node;
         if (right - left) <= self.leaf_size {
             // Explicitly give the node a Leaf type
@@ -135,7 +135,7 @@ impl KDTreeSingleIndex {
 
     #[inline]
     fn middle_split(&mut self, ind: usize, count: usize, index: &mut usize,
-                    cut_feat: &mut usize, cut_val: &mut f64, bounding_box: &BoundingBox) {
+                    cut_feat: &mut usize, cut_val: &mut f64, bounding_box: &BoundingBox<f64>) {
         let eps = 1e-5;
         let mut max_span = bounding_box.bounds[0].high - bounding_box.bounds[0].low;
         for i in 1..self.dim {
@@ -259,7 +259,7 @@ impl KDTreeSingleIndex {
 
     // Compute how far the point is from the bounding box
     #[inline]
-    fn compute_initial_distance(&self, point: &Point, dists: &mut Vec<f64>) -> f64 {
+    fn compute_initial_distance(&self, point: &Point<f64>, dists: &mut Vec<f64>) -> f64 {
         let mut dist_square: f64 = 0.0;
         for i in 0..self.dim {
             if point[i] < self.root_bounding_box.bounds[i].low {
@@ -275,7 +275,7 @@ impl KDTreeSingleIndex {
     }
 
     #[inline]
-    fn search_level(&self, result: &mut dyn ResultSet<f64>, point: &Point,
+    fn search_level(&self, result: &mut dyn ResultSet<f64>, point: &Point<f64>,
                     node: &Node, mut min_dists_square: f64, dists: &mut Vec<f64>, eps_error: f64) -> bool {
         if matches!(node.node_type, NodeType::Leaf { .. }) {
             let worst_dist = result.worst_dist();
@@ -320,7 +320,7 @@ impl KDTreeSingleIndex {
         true
     }
     #[inline]
-    pub(crate) fn knn_search(&self, point: &Point, num_closest: usize, result: &mut dyn ResultSet<f64>)  {
+    pub(crate) fn knn_search(&self, point: &Point<f64>, num_closest: usize, result: &mut dyn ResultSet<f64>)  {
         let mut dists = vec![0.0; self.dim];
         let eps_error = 1.0 + 1e-5;
         let min_dists_square = self.compute_initial_distance(point, &mut dists);
