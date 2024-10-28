@@ -301,32 +301,6 @@ impl KDTreeSingleIndexParams {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct Node<DistType> {
-    pub(crate) node_type: NodeType<DistType>,         // Replaces the union
-    pub(crate) child1: Option<Box<Node<DistType>>>,   // Replaces Node* child1
-    pub(crate) child2: Option<Box<Node<DistType>>>,   // Replaces Node* child2
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum NodeType<DistType> {
-    Leaf {
-        left: usize,
-        right: usize,
-    },
-    NonLeaf {
-        div_feat: i32,      // Dimension used for subdivision
-        div_low: DistType,      // The low value for subdivision
-        div_high: DistType,     // The high value for subdivision
-    },
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct Interval<DistType> {
-    pub(crate) low: DistType,
-    pub(crate) high: DistType,
-}
-
-#[derive(Clone, Debug)]
 pub(crate) struct BoundingBox<DistType> {
     pub(crate) bounds: Vec<Interval<DistType>>,
 }
