@@ -8,45 +8,45 @@ use num_traits::Float;
 use crate::common::common::*;
 use crate::common::min_max::MinMax;
 
-
+// Custom implementation. Use index to locate nodes.
+// Index could point to two types of nodes: LeafNode or SplitNode
+// Let say size is n. Then [0..n-1] is split node anything above n - 1 is leaf node
+// i,e: for n = 100, index = 102 represent LeafNode[2]
 #[derive(Clone, Debug)]
-pub(crate) struct Node<DistType> {
-    pub(crate) node_type: NodeType<DistType>,         // Replaces the union
-    pub(crate) child1: Option<Box<Node<DistType>>>,   // Replaces Node* child1
-    pub(crate) child2: Option<Box<Node<DistType>>>,   // Replaces Node* child2
+pub(crate) struct LeafNode {
+    pub(crate) left: usize,
+    pub(crate) right: usize,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub enum NodeType<DistType> {
-    Leaf {
-        left: usize,
-        right: usize,
-    },
-    NonLeaf {
-        div_feat: i32,      // Dimension used for subdivision
-        div_low: DistType,      // The low value for subdivision
-        div_high: DistType,     // The high value for subdivision
-    },
+#[derive(Clone, Debug)]
+pub(crate) struct SplitNode<DistType> {
+    pub(crate) child1: usize,
+    pub(crate) child2: usize,
+    pub(crate) div_feat: i32,
+    pub(crate) div_low: DistType,
+    pub(crate) div_high: DistType,
 }
 
 #[derive(Debug)]
-pub(crate) struct KDTreeSingleIndex<'a, DistType> {
+pub(crate) struct KDTreeSingleIndexFlat<'a, DistType> {
     // Indices to points in the dataset
     pub(crate) vind: Vec<usize>,
+    pub(crate) leaf_nodes: Vec<LeafNode>,
+    pub(crate) split_nodes: Vec<SplitNode<DistType>>,
+    pub(crate) max_num_split_nodes: usize,
     pub(crate) leaf_size: usize,
     pub(crate) dataset: &'a DataSource<DistType>,
-    pub(crate) root: Option<Box<Node<DistType>>>,
+    pub(crate) root_index: usize,
     pub(crate) size: usize,
     pub(crate) size_at_index_build: usize,
     pub(crate) dim: usize,
     pub(crate) root_bounding_box: BoundingBox<DistType>,
 }
 
-impl<'a, FloatType> KDTreeSingleIndex<'a, FloatType>
+impl<'a, FloatType> KDTreeSingleIndexFlat<'a, FloatType>
 where FloatType: Float + MinMax + AddAssign + Copy {
     #[inline]
     pub fn new(dataset: &'a DataSource<FloatType>, params: KDTreeSingleIndexParams) -> Self {
-        let dim = 3;
         let size = dataset.size();
         let mut vind = Vec::with_capacity(size);
         unsafe {
@@ -55,20 +55,21 @@ where FloatType: Float + MinMax + AddAssign + Copy {
                 vind[i] = i;
             }
         }
-        for i in 0..size {
-            vind.push(i);
-        }
-        let root = None;
+        let leaf_node_count = size / params.leaf_max_size;
+        let split_node_count = leaf_node_count.next_power_of_two();
         let size_at_index_build = size;
         let mut tree = Self {
-            vind,
+            vind: Vec::with_capacity(size),
             leaf_size: params.leaf_max_size,
             dataset,
-            root,
-            size,
+            root_index: 0,
+            leaf_nodes: Vec::with_capacity(leaf_node_count),
+            split_nodes: Vec::with_capacity(split_node_count),
+            max_num_split_nodes: split_node_count,
             size_at_index_build,
-            dim,
-            root_bounding_box: BoundingBox::new(dim),
+            dim: 3,
+            root_bounding_box: BoundingBox::new(3),
+            size,
         };
         tree
     }
@@ -77,7 +78,7 @@ where FloatType: Float + MinMax + AddAssign + Copy {
     pub fn build_index(&mut self) {
         self.compute_bounding_box();
         let mut bounding_box = self.root_bounding_box.clone();
-        self.root = Some(Box::new(self.divide_tree(0, self.size, &mut bounding_box)));
+        self.root_index = self.divide_tree(0, self.size, &mut bounding_box);
     }
 
 
@@ -102,15 +103,10 @@ where FloatType: Float + MinMax + AddAssign + Copy {
     }
 
     #[inline]
-    pub fn divide_tree(&mut self, left: usize, right: usize, bounding_box: &mut BoundingBox<FloatType>) -> Node<FloatType> {
-        let node;
+    pub fn divide_tree(&mut self, left: usize, right: usize, bounding_box: &mut BoundingBox<FloatType>) -> usize {
+        let index;
         if (right - left) <= self.leaf_size {
-            // Explicitly give the node a Leaf type
-            node = Node {
-                node_type: NodeType::Leaf { left, right },
-                child1: None,
-                child2: None,
-            };
+            let node = LeafNode { left, right };
             for i in 0..self.dim {
                 let val = self.dataset.get_point(self.vind[left], i);
                 bounding_box.bounds[i].low = val;
@@ -127,6 +123,8 @@ where FloatType: Float + MinMax + AddAssign + Copy {
                     }
                 }
             }
+            index = self.leaf_nodes.len() + self.max_num_split_nodes;
+            self.leaf_nodes.push(node);
         } else {
             let mut mid = 0;
             let mut cut_feat: usize = 0;
@@ -135,26 +133,28 @@ where FloatType: Float + MinMax + AddAssign + Copy {
 
             let mut left_bounding_box = bounding_box.clone();
             left_bounding_box.bounds[cut_feat].high = cut_val;
-            let child1 = Some(Box::new(self.divide_tree(left, left + mid, &mut left_bounding_box)));
+            let child1 = self.divide_tree(left, left + mid, &mut left_bounding_box);
 
             let mut right_bounding_box = bounding_box.clone();
             right_bounding_box.bounds[cut_feat].low = cut_val;
-            let child2 = Some(Box::new(self.divide_tree(left + mid, right, &mut right_bounding_box)));
+            let child2 = self.divide_tree(left + mid, right, &mut right_bounding_box);
 
             for i in 0..self.dim {
                 bounding_box.bounds[i].low = left_bounding_box.bounds[i].low.min(right_bounding_box.bounds[i].low);
                 bounding_box.bounds[i].high = left_bounding_box.bounds[i].high.max(right_bounding_box.bounds[i].high);
             }
-            node = Node {
-                node_type: NodeType::NonLeaf {
-                    div_feat: cut_feat as i32,
-                    div_low: left_bounding_box.bounds[cut_feat].high,
-                    div_high: right_bounding_box.bounds[cut_feat].low },
+
+            let node = SplitNode {
                 child1,
                 child2,
+                div_feat: cut_feat as i32,
+                div_low: left_bounding_box.bounds[cut_feat].high,
+                div_high: right_bounding_box.bounds[cut_feat].low,
             };
+            index = self.split_nodes.len();
+            self.split_nodes.push(node);
         }
-        node
+        index
     }
 
     #[inline]
@@ -300,11 +300,11 @@ where FloatType: Float + MinMax + AddAssign + Copy {
 
     #[inline]
     fn search_level(&self, result: &mut dyn ResultSet<FloatType>, point: &Point<FloatType>,
-                    node: &Node<FloatType>, mut min_dists_square: FloatType, dists: &mut Vec<FloatType>, eps_error: FloatType) -> bool {
-        if matches!(node.node_type, NodeType::Leaf { .. }) {
+                    node_index: usize, mut min_dists_square: FloatType, dists: &mut Vec<FloatType>, eps_error: FloatType) -> bool {
+        if node_index >= self.max_num_split_nodes {
+            let node = &self.leaf_nodes[node_index - self.max_num_split_nodes];
             let worst_dist = result.worst_dist();
-            let NodeType::Leaf { left, right } = node.node_type else { return false; };
-            for i in left..right {
+            for i in node.left..node.right {
                 let index = self.vind[i];
                 let dist_square = self.dataset.get_squared_distance(point, index);
                 if dist_square < worst_dist {
@@ -315,8 +315,10 @@ where FloatType: Float + MinMax + AddAssign + Copy {
             }
             return true;
         }
-
-        let NodeType::NonLeaf { div_feat, div_low, div_high } = node.node_type else { return false; };
+        let node = &self.split_nodes[node_index];
+        let div_feat = node.div_feat;
+        let div_low = node.div_low;
+        let div_high = node.div_high;
         let index = div_feat as usize;
         let val = point[index];
         let diff1 = val - div_low;
@@ -329,14 +331,14 @@ where FloatType: Float + MinMax + AddAssign + Copy {
                 (&node.child2, &node.child1, Self::accum_dist(val, div_low))
             };
 
-        if !self.search_level(result, point, best_child.as_ref().unwrap(), min_dists_square, dists, eps_error) {
+        if !self.search_level(result, point, *best_child, min_dists_square, dists, eps_error) {
             return false;
         }
         let dist = dists[index];
         min_dists_square = min_dists_square + cut_dists - dist;
         dists[index] = cut_dists;
         if min_dists_square * eps_error <= result.worst_dist() {
-            if !self.search_level(result, point, other_child.as_ref().unwrap(), min_dists_square, dists, eps_error) {
+            if !self.search_level(result, point, *other_child, min_dists_square, dists, eps_error) {
                 return false;
             }
         }
@@ -348,7 +350,7 @@ where FloatType: Float + MinMax + AddAssign + Copy {
         let mut dists = vec![FloatType::zero(); self.dim];
         let eps_error = FloatType::from(1.0 + 1e-5).unwrap();
         let min_dists_square = self.compute_initial_distance(point, &mut dists);
-        self.search_level(result, point, self.root.as_ref().unwrap(), min_dists_square, &mut dists, eps_error);
+        self.search_level(result, point, self.root_index, min_dists_square, &mut dists, eps_error);
     }
     #[inline]
     fn dataset_get(&self, index: usize, dim: usize) -> FloatType {

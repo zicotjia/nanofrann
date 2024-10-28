@@ -31,7 +31,6 @@
 
 use std::cmp::PartialEq;
 use std::ops::Index;
-use kiddo::{ImmutableKdTree, KdTree, SquaredEuclidean};
 use crate::common::min_max::MinMax;
 
 pub(crate) trait ResultSet<DistType> {
@@ -298,6 +297,11 @@ impl KDTreeSingleIndexParams {
             leaf_max_size: 10
         }
     }
+}
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Interval<DistType> {
+    pub(crate) low: DistType,
+    pub(crate) high: DistType,
 }
 
 #[derive(Clone, Debug)]
