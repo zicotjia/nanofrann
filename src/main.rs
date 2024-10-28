@@ -9,6 +9,7 @@ use common::common::*;
 
 use rand::random;
 use crate::common::min_max::MinMax;
+use crate::tree::nanofrann_flat::KDTreeSingleIndexFlat;
 
 fn generate_random_point_clouds_of_size<T>(size: usize) -> DataSource<T>
 where
@@ -76,7 +77,7 @@ where
 
 fn main() {
     let size = 800000;
-    let test_size = 800000;
+    let test_size = 1;
 
     let dataset = generate_random_point_clouds_of_size::<f32>(size);
     let entries: Vec<[f64; 3]> = dataset.vec.iter().map(|point| [point.x as f64, point.y as f64, point.z as f64]).collect();
@@ -89,6 +90,15 @@ fn main() {
     kdtree.build_index();
     let elapsed = start.elapsed();
     println!("Time taken to build for nanofrann: {:?}", elapsed);
+
+    let mut kdtree_flat = KDTreeSingleIndexFlat::new(&dataset, KDTreeSingleIndexParams::new());
+    let start = std::time::Instant::now();
+    kdtree_flat.build_index();
+    let elapsed = start.elapsed();
+    println!("Time taken to build for nanofrann_flat: {:?}", elapsed);
+
+    // println!("flat vind: {:?}", kdtree_flat.vind);
+    // println!("normal vind: {:?}", kdtree.vind);
 
     let start = std::time::Instant::now();
     let mut kiddo: kiddo::ImmutableKdTree<_, 3> = (&*entries).into();
@@ -106,6 +116,11 @@ fn main() {
         kdtree.knn_search(point, 10, &mut result_0);
     }
 
+    for point in &points_to_test {
+        let mut result_0 = KNNResultSet::new_with_capacity(10);
+        kdtree_flat.knn_search(point, 10, &mut result_0);
+    }
+
     for point in &points_to_test_vec {
         kiddo.nearest_n::<SquaredEuclidean>(point, 10);
     }
@@ -115,9 +130,6 @@ fn main() {
     }
 
     // Test KDTreeSingleIndex
-    let mut params = KDTreeSingleIndexParams::new();
-    // params.leaf_max_size = 10;
-    // let mut kdtree = KDTreeSingleIndex::new(dataset.clone(), params);
     kdtree.build_index();
     println!("Querying {} points for 10 nearest neighbours using nanofrann", test_size);
     let start = std::time::Instant::now();
@@ -127,6 +139,18 @@ fn main() {
     }
     let duration = start.elapsed();
     println!("Time taken: {:?}", duration);
+
+    // Test KDTreeSingleIndexFlat
+    kdtree_flat.build_index();
+    println!("Querying {} points for 10 nearest neighbours using nanofrann_flat", test_size);
+    let start = std::time::Instant::now();
+    for point in points_to_test.iter() {
+        let mut result = KNNResultSet::new_with_capacity(10);
+        kdtree_flat.knn_search(point, 10, &mut result);
+    }
+    let duration = start.elapsed();
+    println!("Time taken: {:?}", duration);
+
 
     // Test Kiddo
     let kiddo: kiddo::ImmutableKdTree<_, 3> = (&*entries).into();
@@ -151,9 +175,12 @@ fn main() {
     // Test correctness
     let mut result_nano = KNNResultSet::new_with_capacity(10);
     kdtree.knn_search(&points_to_test[0], 10, &mut result_nano);
+    let mut result_nano_flat = KNNResultSet::new_with_capacity(10);
+    kdtree_flat.knn_search(&points_to_test[0], 10, &mut result_nano_flat);
     let result_kiddo = kiddo.nearest_n::<SquaredEuclidean>(&points_to_test_vec[0], 10);
     let result_kiddo_indices: Vec<u64> = result_kiddo.iter().map(|neigbour| neigbour.item).collect();
 
+    println!("Result from KDTreeSingleIndexFlat: {:?}", result_nano_flat.indices);
     println!("Result from KDTreeSingleIndex: {:?}", result_nano.indices);
     println!("Result from kiddo: {:?}", result_kiddo_indices);
 }

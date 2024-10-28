@@ -56,10 +56,10 @@ where FloatType: Float + MinMax + AddAssign + Copy {
             }
         }
         let leaf_node_count = size / params.leaf_max_size;
-        let split_node_count = leaf_node_count.next_power_of_two();
+        let split_node_count = leaf_node_count.next_power_of_two() * 3;
         let size_at_index_build = size;
         let mut tree = Self {
-            vind: Vec::with_capacity(size),
+            vind,
             leaf_size: params.leaf_max_size,
             dataset,
             root_index: 0,

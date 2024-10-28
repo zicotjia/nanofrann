@@ -55,9 +55,6 @@ where FloatType: Float + MinMax + AddAssign + Copy {
                 vind[i] = i;
             }
         }
-        for i in 0..size {
-            vind.push(i);
-        }
         let root = None;
         let size_at_index_build = size;
         let mut tree = Self {
