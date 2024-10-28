@@ -4,7 +4,7 @@ mod tree;
 use kiddo::SquaredEuclidean;
 use num_traits::{FromPrimitive, Num};
 use rand::distr::{Distribution, Standard};
-use tree::nanofrann_f64::*;
+use tree::nanofrann_float::*;
 use common::common::*;
 
 use rand::random;
@@ -76,88 +76,86 @@ where
 
 fn main() {
     let size = 800000;
-    let test_size = 1;
+    let test_size = 1000;
 
-    let dataset = generate_random_point_clouds_of_size(size);
-    let dataset_u16 = generate_sorted_point_clouds_of_size(size);
-    let entries: Vec<[f64; 3]> = dataset.vec.iter().map(|point| [point.x, point.y, point.z]).collect();
-    let points_to_test: Vec<Point<f64>> = generate_random_points_to_test(test_size);
-    let points_to_test_u16 = generate_random_points_to_test::<u16>(test_size);
-    let points_to_test_vec: Vec<[f64; 3]> = points_to_test.iter().map(|point| [point.x, point.y, point.z]).collect();
+    let dataset = generate_random_point_clouds_of_size::<f32>(size);
+    let entries: Vec<[f64; 3]> = dataset.vec.iter().map(|point| [point.x as f64, point.y as f64, point.z as f64]).collect();
+    let points_to_test: Vec<Point<f32>> = generate_random_points_to_test(test_size);
+    let points_to_test_vec: Vec<[f64; 3]> = points_to_test.iter().map(|point| [point.x as f64, point.y as f64, point.z as f64]).collect();
 
     // Build
-    let mut kdtree = KDTreeSingleIndex::<u16>::new(dataset_u16.clone(), KDTreeSingleIndexParams::new());
-    // let start = std::time::Instant::now();
+    let mut kdtree = KDTreeSingleIndex::new(dataset.clone(), KDTreeSingleIndexParams::new());
+    let start = std::time::Instant::now();
     kdtree.build_index();
-    // let elapsed = start.elapsed();
-    // println!("Time taken to build for nanofrann: {:?}", elapsed);
-    //
-    // let start = std::time::Instant::now();
-    // let mut kiddo: kiddo::ImmutableKdTree<_, 3> = (&*entries).into();
-    // let elapsed = start.elapsed();
-    // println!("Time taken to build for kiddo: {:?}", elapsed);
-    //
-    // let start = std::time::Instant::now();
-    // let kd_tree = kd_tree::KdTree::build_by_ordered_float(entries.clone());
-    // let elapsed = start.elapsed();
-    // println!("Time taken to build for kd_tree: {:?}", elapsed);
-    //
-    // // Warm-up
-    // for point in &points_to_test_u16 {
-    //     let mut result_0 = KNNResultSet::<u16>::new_with_capacity(10);
-    //     kdtree.knn_search(point, 10, &mut result_0);
-    // }
-    //
-    // for point in &points_to_test_vec {
-    //     kiddo.nearest_n::<SquaredEuclidean>(point, 10);
-    // }
-    //
-    // for point in &points_to_test_vec {
-    //     kd_tree.nearests(point, 10);
-    // }
-    //
-    // // Test KDTreeSingleIndex
-    // let mut params = KDTreeSingleIndexParams::new();
-    // // params.leaf_max_size = 10;
-    // // let mut kdtree = KDTreeSingleIndex::new(dataset.clone(), params);
-    // kdtree.build_index();
-    // println!("Querying {} points for 10 nearest neighbours using nanofrann", test_size);
-    // let start = std::time::Instant::now();
-    // for point in points_to_test_u16.iter() {
-    //     let mut result = KNNResultSet::<u16>::new_with_capacity(10);
-    //     kdtree.knn_search(point, 10, &mut result);
-    // }
-    // let duration = start.elapsed();
-    // println!("Time taken: {:?}", duration);
-    //
-    // // Test Kiddo
-    // let kiddo: kiddo::ImmutableKdTree<_, 3> = (&*entries).into();
-    // println!("Querying {} points for 10 nearest neighbours using kiddo", test_size);
-    // let start_time = std::time::Instant::now();
-    // for point in points_to_test_vec.iter() {
-    //     kiddo.nearest_n::<SquaredEuclidean>(point, 10);
-    // }
-    // let elapsed_time = start_time.elapsed();
-    // println!("Time taken: {:?}", elapsed_time);
-    //
-    // // Test kd_tree
-    // let kd_tree = kd_tree::KdTree::build_by_ordered_float(entries);
-    // println!("Querying {} points for 10 nearest neighbours using kd_tree", test_size);
-    // let start_time = std::time::Instant::now();
-    // for point in points_to_test_vec.iter() {
-    //     kd_tree.nearests(point, 10);
-    // }
-    // let elapsed_time = start_time.elapsed();
-    // println!("Time taken: {:?}", elapsed_time);
-    //
-    // // Test correctness
-    // let mut result_nano = KNNResultSet::<u16>::new_with_capacity(10);
-    // kdtree.knn_search(&points_to_test_u16[0], 10, &mut result_nano);
-    // let result_kiddo = kiddo.nearest_n::<SquaredEuclidean>(&points_to_test_vec[0], 10);
-    // let result_kiddo_indices: Vec<u64> = result_kiddo.iter().map(|neigbour| neigbour.item).collect();
-    //
-    // println!("Result from KDTreeSingleIndex: {:?}", result_nano.indices);
-    // println!("Result from kiddo: {:?}", result_kiddo_indices);
+    let elapsed = start.elapsed();
+    println!("Time taken to build for nanofrann: {:?}", elapsed);
+
+    let start = std::time::Instant::now();
+    let mut kiddo: kiddo::ImmutableKdTree<_, 3> = (&*entries).into();
+    let elapsed = start.elapsed();
+    println!("Time taken to build for kiddo: {:?}", elapsed);
+
+    let start = std::time::Instant::now();
+    let kd_tree = kd_tree::KdTree::build_by_ordered_float(entries.clone());
+    let elapsed = start.elapsed();
+    println!("Time taken to build for kd_tree: {:?}", elapsed);
+
+    // Warm-up
+    for point in &points_to_test {
+        let mut result_0 = KNNResultSet::new_with_capacity(10);
+        kdtree.knn_search(point, 10, &mut result_0);
+    }
+
+    for point in &points_to_test_vec {
+        kiddo.nearest_n::<SquaredEuclidean>(point, 10);
+    }
+
+    for point in &points_to_test_vec {
+        kd_tree.nearests(point, 10);
+    }
+
+    // Test KDTreeSingleIndex
+    let mut params = KDTreeSingleIndexParams::new();
+    // params.leaf_max_size = 10;
+    // let mut kdtree = KDTreeSingleIndex::new(dataset.clone(), params);
+    kdtree.build_index();
+    println!("Querying {} points for 10 nearest neighbours using nanofrann", test_size);
+    let start = std::time::Instant::now();
+    for point in points_to_test.iter() {
+        let mut result = KNNResultSet::new_with_capacity(10);
+        kdtree.knn_search(point, 10, &mut result);
+    }
+    let duration = start.elapsed();
+    println!("Time taken: {:?}", duration);
+
+    // Test Kiddo
+    let kiddo: kiddo::ImmutableKdTree<_, 3> = (&*entries).into();
+    println!("Querying {} points for 10 nearest neighbours using kiddo", test_size);
+    let start_time = std::time::Instant::now();
+    for point in points_to_test_vec.iter() {
+        kiddo.nearest_n::<SquaredEuclidean>(point, 10);
+    }
+    let elapsed_time = start_time.elapsed();
+    println!("Time taken: {:?}", elapsed_time);
+
+    // Test kd_tree
+    let kd_tree = kd_tree::KdTree::build_by_ordered_float(entries);
+    println!("Querying {} points for 10 nearest neighbours using kd_tree", test_size);
+    let start_time = std::time::Instant::now();
+    for point in points_to_test_vec.iter() {
+        kd_tree.nearests(point, 10);
+    }
+    let elapsed_time = start_time.elapsed();
+    println!("Time taken: {:?}", elapsed_time);
+
+    // Test correctness
+    let mut result_nano = KNNResultSet::new_with_capacity(10);
+    kdtree.knn_search(&points_to_test[0], 10, &mut result_nano);
+    let result_kiddo = kiddo.nearest_n::<SquaredEuclidean>(&points_to_test_vec[0], 10);
+    let result_kiddo_indices: Vec<u64> = result_kiddo.iter().map(|neigbour| neigbour.item).collect();
+
+    println!("Result from KDTreeSingleIndex: {:?}", result_nano.indices);
+    println!("Result from kiddo: {:?}", result_kiddo_indices);
 }
 
 #[cfg(test)]
