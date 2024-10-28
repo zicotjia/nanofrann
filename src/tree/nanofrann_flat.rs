@@ -55,7 +55,7 @@ where FloatType: Float + MinMax + AddAssign + Copy {
                 vind[i] = i;
             }
         }
-        let leaf_node_count = size / params.leaf_max_size;
+        let leaf_node_count = size.div_ceil(params.leaf_max_size);
         let split_node_count = leaf_node_count.next_power_of_two() * 3;
         let size_at_index_build = size;
         let mut tree = Self {
