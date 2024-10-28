@@ -76,7 +76,7 @@ where
 
 fn main() {
     let size = 800000;
-    let test_size = 1000;
+    let test_size = 800000;
 
     let dataset = generate_random_point_clouds_of_size::<f32>(size);
     let entries: Vec<[f64; 3]> = dataset.vec.iter().map(|point| [point.x as f64, point.y as f64, point.z as f64]).collect();
@@ -84,7 +84,7 @@ fn main() {
     let points_to_test_vec: Vec<[f64; 3]> = points_to_test.iter().map(|point| [point.x as f64, point.y as f64, point.z as f64]).collect();
 
     // Build
-    let mut kdtree = KDTreeSingleIndex::new(dataset.clone(), KDTreeSingleIndexParams::new());
+    let mut kdtree = KDTreeSingleIndex::new(&dataset, KDTreeSingleIndexParams::new());
     let start = std::time::Instant::now();
     kdtree.build_index();
     let elapsed = start.elapsed();
@@ -174,7 +174,7 @@ mod kd_tree_test {
         let mut params = KDTreeSingleIndexParams::new();
         params.leaf_max_size = 2;
         // Initialize KDTreeSingleIndex
-        let mut kdtree = KDTreeSingleIndex::new(dataset, params);
+        let mut kdtree = KDTreeSingleIndex::new(&dataset, params);
 
         // Build the KD-tree index
         kdtree.build_index();
@@ -230,7 +230,7 @@ mod kd_tree_test {
         let mut params = KDTreeSingleIndexParams::new();
         params.leaf_max_size = 2;
         // Initialize KDTreeSingleIndex
-        let mut kdtree = KDTreeSingleIndex::new(dataset, params);
+        let mut kdtree = KDTreeSingleIndex::new(&dataset, params);
 
         // Build the KD-tree index
         kdtree.build_index();

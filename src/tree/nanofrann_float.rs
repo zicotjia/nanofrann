@@ -2,17 +2,18 @@
 // IndexType = usize
 
 use std::ops::AddAssign;
+use std::rc::Rc;
 use num_traits::Float;
 // Version 3: unsafe rust
 use crate::common::common::*;
 use crate::common::min_max::MinMax;
 
 #[derive(Debug)]
-pub(crate) struct KDTreeSingleIndex<DistType> {
+pub(crate) struct KDTreeSingleIndex<'a, DistType> {
     // Indices to points in the dataset
     pub(crate) vind: Vec<usize>,
     pub(crate) leaf_size: usize,
-    pub(crate) dataset: DataSource<DistType>,
+    pub(crate) dataset: &'a DataSource<DistType>,
     pub(crate) root: Option<Box<Node<DistType>>>,
     pub(crate) size: usize,
     pub(crate) size_at_index_build: usize,
@@ -20,10 +21,10 @@ pub(crate) struct KDTreeSingleIndex<DistType> {
     pub(crate) root_bounding_box: BoundingBox<DistType>,
 }
 
-impl<FloatType> KDTreeSingleIndex<FloatType>
+impl<'a, FloatType> KDTreeSingleIndex<'a, FloatType>
 where FloatType: Float + MinMax + AddAssign + Copy {
     #[inline]
-    pub fn new(dataset: DataSource<FloatType>, params: KDTreeSingleIndexParams) -> Self {
+    pub fn new(dataset: &'a DataSource<FloatType>, params: KDTreeSingleIndexParams) -> Self {
         let dim = 3;
         let size = dataset.size();
         let mut vind = Vec::with_capacity(size);
