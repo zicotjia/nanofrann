@@ -30,7 +30,7 @@ pub enum NodeType<DistType> {
 }
 
 #[derive(Debug)]
-pub(crate) struct KDTreeSingleIndex<'a, DistType> {
+pub struct KDTreeSingleIndex<'a, DistType> {
     // Indices to points in the dataset
     pub(crate) vind: Vec<usize>,
     pub(crate) leaf_size: usize,
@@ -341,7 +341,7 @@ where FloatType: Float + MinMax + AddAssign + Copy {
         true
     }
     #[inline]
-    pub(crate) fn knn_search(&self, point: &Point<FloatType>, num_closest: usize, result: &mut dyn ResultSet<FloatType>)  {
+    pub fn knn_search(&self, point: &Point<FloatType>, result: &mut dyn ResultSet<FloatType>)  {
         let mut dists = vec![FloatType::zero(); self.dim];
         let eps_error = FloatType::from(1.0 + 1e-5).unwrap();
         let min_dists_square = self.compute_initial_distance(point, &mut dists);

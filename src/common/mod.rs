@@ -1,3 +1,3 @@
-pub(crate) mod common;
-pub(crate) mod min_max;
+pub mod common;
+pub mod min_max;
 

@@ -1,7 +1,10 @@
+use std::hint::black_box;
+use std::time::Duration;
+use nanofrann::common::common::{DataSource, KDTreeSingleIndexParams, KNNResultSet, Point};
 extern crate ply_rs;
 use ply_rs::parser;
+use criterion::{criterion_group, criterion_main, Criterion};
 use ply_rs::ply::{Ply, Property};
-use nanofrann::common::common::{DataSource, KDTreeSingleIndexParams, KNNResultSet, Point};
 use nanofrann::tree::nanofrann_float::KDTreeSingleIndex;
 
 #[derive(Debug, Clone)] // not necessary for parsing, only for println at end of example.
@@ -61,12 +64,10 @@ fn setup_dataset_for_kiddo(vertices: Vec<Vertex>) -> Vec<[f64; 3]> {
     }
     data
 }
-#[test]
-fn test_bench() {
+fn benchmark_kd_trees(c: &mut Criterion) {
+    let mut group = c.benchmark_group("kd_tree_construction");
+    group.sample_size(10);
 
-}
-
-fn main() {
     // Reading PLY file
     let path = "data/longdress/ply/longdress_vox10_1051.ply";
     let vertices = read_ply(path);
@@ -80,80 +81,37 @@ fn main() {
     let kd_tree_data = setup_dataset_for_kd_tree(vertices.clone());
     let mut kd_tree = kd_tree::KdTree::build_by_ordered_float(kd_tree_data.clone());
 
-    let start = std::time::Instant::now();
-    for i in 0..vertices.len() {
-        let query_point = Point::<f64> {
-            x: vertices[i].x,
-            y: vertices[i].y,
-            z: vertices[i].z,
-        };
-        let mut result = KNNResultSet::<f64>::new_with_capacity(1);
-        nanofrann_tree.knn_search(&query_point, &mut result);
-    }
-    let duration = start.elapsed();
-    println!("nanofrann: {:?}", duration);
-
+    let points_to_test_nanofrann : Vec<Point<f64>> = vertices.iter().map(|vertex| {
+        Point::<f64> {
+            x: vertex.x,
+            y: vertex.y,
+            z: vertex.z,
+        }
+    }).collect();
+    group.bench_function("nanofrann_query_resample", |b| {
+        b.iter(|| {
+            for point in points_to_test_nanofrann.iter() {
+                let mut result = KNNResultSet::<f64>::new_with_capacity(10);
+                black_box(nanofrann_tree.knn_search(&point,  &mut result));
+            }
+        });
+    });
     let points_to_test_kd_tree : Vec<[f64; 3]> = vertices.iter().map(|vertex| {
         [vertex.x as f64, vertex.y as f64, vertex.z as f64]
     }).collect();
-
-    let start = std::time::Instant::now();
-    for point in &points_to_test_kd_tree {
-        kd_tree.nearests(point, 1);
-    }
-    let duration = start.elapsed();
-    println!("kd_tree: {:?}", duration);
+    group.bench_function("kd_tree_query_resample", |b| {
+        b.iter(|| {
+            for point in &points_to_test_kd_tree {
+                let res = kd_tree.nearests(point, 10);
+                black_box(res);
+            }
+        });
+    });
 }
 
-
-// fn benchmark_resample_point_cloud(c: &mut criterion) {
-//     // Reading PLY file
-//     let path = "data/longdress/ply/longdress_vox10_1051.ply";
-//     let vertices = read_ply(path);
-//
-//     // Nanofrann setup
-//     let nanofrann_data = setup_dataset_for_nanofrann(vertices.clone());
-//
-//     // kd_tree setup
-//     let kd_tree_data = setup_dataset_for_kd_tree(vertices.clone());
-//
-//     // Kiddo setup
-//     let kiddo_data = setup_dataset_for_kiddo(vertices.clone());
-//
-//     // Benchmark nanofrann
-//     c.bench_with_input(
-//         BenchmarkId::new("nanofrann_build", vertices.len()),
-//         &nanofrann_data,
-//         |b, data| {
-//             b.iter(|| {
-//                 let mut tree = KDTreeSingleIndex::new(data, KDTreeSingleIndexParams::new());
-//                 tree.build_index();
-//             });
-//         },
-//     );
-//
-//     // Benchmark kd_tree
-//     c.bench_with_input(
-//         BenchmarkId::new("kd_tree_build", kd_tree_data.len()),
-//         &kd_tree_data,
-//         |b, data| {
-//             b.iter(|| {
-//                 kd_tree::KdTree::build_by_ordered_float(data.clone());
-//             });
-//         },
-//     );
-//
-//
-//     let mut nanofrann_tree = KDTreeSingleIndex::new(&nanofrann_data, KDTreeSingleIndexParams::new());
-//     let mut kd_tree = kd_tree::KdTree::build_by_ordered_float(kd_tree_data.clone());
-//
-//     // Query Benchmark for Nanofrann
-//     nanofrann_tree.build_index();
-// }
-
-// criterion_group!{
-//   name = benches;
-//   config = Criterion::default().measurement_time(Duration::from_secs(10));
-//   targets = benchmark_kd_trees
-// }
-// criterion_main!(benches);
+criterion_group!{
+  name = benches;
+  config = Criterion::default().measurement_time(Duration::from_secs(10));
+  targets = benchmark_kd_trees
+}
+criterion_main!(benches);

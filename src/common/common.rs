@@ -33,7 +33,7 @@ use std::cmp::PartialEq;
 use std::ops::Index;
 use crate::common::min_max::MinMax;
 
-pub(crate) trait ResultSet<DistType> {
+pub trait ResultSet<DistType> {
     fn init(&mut self, indices: &mut Vec<usize>, dists: &mut Vec<DistType>);
     fn size(&self) -> usize;
     fn is_full(&self) -> bool;
@@ -43,7 +43,7 @@ pub(crate) trait ResultSet<DistType> {
 
 // Version 1: used vectors
 #[derive(Debug)]
-pub(crate) struct KNNResultSet<DistType> {
+pub struct KNNResultSet<DistType> {
     pub(crate) indices: Vec<usize>,
     pub(crate) dists: Vec<DistType>,
     pub(crate) capacity: usize,
@@ -52,7 +52,7 @@ pub(crate) struct KNNResultSet<DistType> {
 
 impl<T> KNNResultSet<T>
 where T : PartialEq + PartialOrd + Copy + MinMax {
-    pub(crate) fn new_with_capacity(capacity: usize) -> Self {
+    pub fn new_with_capacity(capacity: usize) -> Self {
         unsafe {
             // Fastest way to allocate without default value that i know of
             let indices = Vec::from_raw_parts(
@@ -122,7 +122,7 @@ where T : PartialOrd + Copy + MinMax {
     }
 }
 
-pub(crate) struct RadiusResultSet<DistType> {
+pub struct RadiusResultSet<DistType> {
     pub(crate) radius: DistType,
     pub(crate) indices_dists: Vec<(usize, DistType)>, // (Index, Distance)
 }
@@ -216,10 +216,10 @@ where T : MinMax {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct Point<DistType> {
-    pub(crate) x: DistType,
-    pub(crate) y: DistType,
-    pub(crate) z: DistType,
+pub struct Point<DistType> {
+    pub x: DistType,
+    pub y: DistType,
+    pub z: DistType,
 }
 
 impl<T> Index<usize> for Point<T> {
@@ -236,8 +236,8 @@ impl<T> Index<usize> for Point<T> {
 
 // Hard code a data source for the KDTree
 #[derive(Clone, Debug)]
-pub(crate) struct DataSource<DistType> {
-    pub(crate) vec: Vec<Point<DistType>>
+pub struct DataSource<DistType> {
+    pub vec: Vec<Point<DistType>>
 }
 
 impl<T> DataSource<T>
@@ -287,8 +287,8 @@ std::ops::Sub<Output = T> + std::ops::Mul<Output = T> + std::ops::Add<Output = T
     }
 }
 
-pub(crate) struct KDTreeSingleIndexParams {
-    pub(crate) leaf_max_size: usize,
+pub struct KDTreeSingleIndexParams {
+    pub leaf_max_size: usize,
 }
 
 impl KDTreeSingleIndexParams {
@@ -327,14 +327,14 @@ mod knnresult_set_tests {
 
     #[test]
     fn test_results_new() {
-        let sut = KNNResultSet::new_with_capacity(10);
+        let sut = KNNResultSet::<f64>::new_with_capacity(10);
         assert_eq!(sut.indices.len(), 10);
         assert_eq!(sut.dists.len(), 10);
     }
 
     #[test]
     fn test_add_point() {
-        let mut sut = KNNResultSet::new_with_capacity(10);
+        let mut sut = KNNResultSet::<f64>::new_with_capacity(10);
         sut.add_point(1.0, 1);
         sut.add_point(3.0, 2);
         sut.add_point(2.0, 3);
@@ -350,7 +350,7 @@ mod knnresult_set_tests {
 
     #[test]
     fn test_worst_dist() {
-        let mut sut = KNNResultSet::new_with_capacity(10);
+        let mut sut = KNNResultSet::<f64>::new_with_capacity(10);
         sut.add_point(1.0, 1);
         sut.add_point(2.0, 2);
         sut.add_point(3.0, 3);
