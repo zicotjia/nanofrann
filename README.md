@@ -2,8 +2,8 @@ Blazingly Fast 3d KD Tree implementation on based on nanoflann https://github.co
 
 Optimised to do approximate nearest neighbour queries with millions of points.
 
-Benchmarking with [kd-tree crate]([https://www.genome.gov/](https://github.com/mrhooray/kdtree-rs)) crate with the following setting: 
-- Using one frame from longdress point cloud.
+Benchmarking with [kd-tree crate](https://github.com/mrhooray/kdtree-rs) with the following settings: 
+- Using one frame from longdress point cloud file.
 - About 760000 points
 - Find approximate 10 nearest neighbours for each points
 
