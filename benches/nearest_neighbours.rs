@@ -97,7 +97,7 @@ fn benchmark_kd_trees(c: &mut Criterion) {
         });
     });
     let points_to_test_kd_tree : Vec<[f64; 3]> = vertices.iter().map(|vertex| {
-        [vertex.x as f64, vertex.y as f64, vertex.z as f64]
+        [vertex.x, vertex.y, vertex.z]
     }).collect();
     group.bench_function("kd_tree_query_resample", |b| {
         b.iter(|| {

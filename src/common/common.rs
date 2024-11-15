@@ -159,11 +159,7 @@ where T : PartialOrd + Copy + MinMax  {
 impl<T> ResultSet<T> for RadiusResultSet<T>
 where T : PartialOrd + Copy + MinMax {
     fn init(&mut self, indices: &mut Vec<usize>, dists: &mut Vec<T>) {
-        // self.indices = indices.clone();
-        // self.dists = dists.clone();
-        // if self.capacity > 0 {
-        //     self.dists[self.capacity - 1] = f64::MAX;
-        // }
+
     }
     
     fn size(&self) -> usize {

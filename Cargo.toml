@@ -19,6 +19,6 @@ debug = true
 
 
 [[bench]]
-name = "construction"
+name = "nearest_neighbours"
 harness = false
 
