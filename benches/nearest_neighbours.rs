@@ -81,6 +81,27 @@ fn benchmark_kd_trees(c: &mut Criterion) {
     let kd_tree_data = setup_dataset_for_kd_tree(vertices.clone());
     let mut kd_tree = kd_tree::KdTree::build_by_ordered_float(kd_tree_data.clone());
 
+    // query one points
+    let point_to_test_nanofrann = Point::<f64> {
+        x: vertices[0].x,
+        y: vertices[0].y,
+        z: vertices[0].z,
+    };
+    group.bench_function("nanofrann_query_one", |b| {
+        b.iter(|| {
+            let mut result = KNNResultSet::<f64>::new_with_capacity(10);
+            black_box(nanofrann_tree.knn_search(&point_to_test_nanofrann,  &mut result));
+        });
+    });
+
+    let point_to_test_kd_tree = [vertices[0].x, vertices[0].y, vertices[0].z];
+    group.bench_function("kd_tree_query_one", |b| {
+        b.iter(|| {
+            let res = kd_tree.nearests(&point_to_test_kd_tree, 10);
+            black_box(res);
+        });
+    });
+
     let points_to_test_nanofrann : Vec<Point<f64>> = vertices.iter().map(|vertex| {
         Point::<f64> {
             x: vertex.x,
