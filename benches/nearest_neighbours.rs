@@ -65,7 +65,7 @@ fn setup_dataset_for_kiddo(vertices: Vec<Vertex>) -> Vec<[f64; 3]> {
     data
 }
 fn benchmark_kd_trees(c: &mut Criterion) {
-    let mut group = c.benchmark_group("kd_tree_construction");
+    let mut group = c.benchmark_group("kd_tree");
     group.sample_size(10);
 
     // Reading PLY file
