@@ -1,4 +1,4 @@
-Blazingly Fast 3d KD Trees implementation on based on nanoflann https://github.com/jlblancoc/nanoflann on Rust. 
+Blazingly Fast 3d KD Tree implementation on based on nanoflann https://github.com/jlblancoc/nanoflann on Rust. 
 
 Optimised to do approximate nearest neighbour queries with millions of points.
 
